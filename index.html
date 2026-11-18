@@ -132,6 +132,7 @@
     /* Asignaturas y temas como tarjetas */
     .tree-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 10px; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
     .tree-head .tree-actions { display: flex; gap: 6px; }
+    .tree-head button#zipLatex { font-size: 12px; font-weight: 700; }
     .tree-head button { min-width: 32px; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); font-size: 15px; cursor: pointer; }
     .tree-head button:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -345,6 +346,7 @@
         <span>Asignaturas</span>
         <span class="tree-actions">
           <button type="button" id="subjectNew" title="Nueva asignatura">+</button>
+          <button type="button" id="zipLatex" title="Descargar un ZIP con todos los PDF generados desde LaTeX">⬇ ZIP</button>
           <button type="button" id="collapseAll" title="Plegar / desplegar todo">⇅</button>
         </span>
       </div>
@@ -413,6 +415,20 @@
       const r = await postJson('/api/subject-new', { name });
       if (!r.ok) return uiAlert(r.error);
       await loadFiles();
+    });
+
+    document.getElementById('zipLatex').addEventListener('click', async () => {
+      if (!apiEnabled) return uiAlert('Para descargar el ZIP abre la página con iniciar.bat y entra por http://localhost:8000.');
+      const r = await fetch('/api/latex-pdfs', { cache: 'no-store' }).then((x) => x.json()).catch(() => null);
+      if (!r || !r.ok) return uiAlert('No se pudo consultar el servidor.', 'ZIP de LaTeX');
+      if (!r.count) return uiAlert('Todavía no hay PDF generados desde LaTeX. Abre el LaTeX de un PDF (botón LaTeX de su tarjeta) para compilarlo y vuelve a intentarlo.', 'ZIP de LaTeX');
+      const link = document.createElement('a');
+      link.href = '/api/zip-latex';
+      link.download = '';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      showToast(`Descargando ${r.count} PDF de LaTeX…`);
     });
 
     document.getElementById('collapseAll').addEventListener('click', () => {

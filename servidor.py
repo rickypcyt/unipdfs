@@ -318,6 +318,32 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"ok": False, "error": str(exc)}, 500)
             return
 
+        if path in ("/api/latex-pdfs", "/api/zip-latex"):
+            base = config.root()
+            found = extractor.latex_pdfs(base) if base else []
+            if path == "/api/latex-pdfs":
+                self._json({"ok": True, "count": len(found),
+                            "files": [p.relative_to(base).as_posix() for p in found]})
+                return
+            if not found:
+                self._json({"ok": False, "error": "Todavía no hay PDF generados desde LaTeX."}, 404)
+                return
+            import io
+            import zipfile
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for p in found:
+                    zf.write(p, p.relative_to(base).as_posix())
+            data = buf.getvalue()
+            filename = f"{base.name} - PDF LaTeX.zip"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(filename))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
         if path == "/api/stats":
             query = parse_qs(urlparse(self.path).query)
             pdf, error = self._resolve_pdf(query.get("path", [""])[0].strip())

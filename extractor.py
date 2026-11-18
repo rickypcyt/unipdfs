@@ -63,6 +63,12 @@ def is_generated(pdf):
     return Path(pdf).stem.endswith(config.LATEX_SUFFIX)
 
 
+def latex_pdfs(base):
+    """Los PDF generados desde LaTeX ("... VersionLatex.pdf") de toda la carpeta fuente."""
+    return sorted(p for p in base.rglob("*.pdf")
+                  if p.is_file() and is_generated(p) and not skipped(p.relative_to(base).parent.parts))
+
+
 def iter_pdfs(base):
     for pdf in base.rglob("*.pdf"):
         if pdf.is_file() and not skipped(pdf.relative_to(base).parent.parts) and not is_generated(pdf):
