@@ -101,6 +101,10 @@
     .tree-head button:hover { background: #eef2f7; color: var(--text); }
 
     .pdf-list { display: block; font-size: 13.5px; }
+    .extract-status { margin: 0 0 8px; padding: 6px 8px; border-radius: 6px; background: #eef4ff; color: #1849a9; font-size: 12px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .extract-status.warn { background: #fff8e6; color: #7a5b00; }
+    .extract-dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: #d0d5dd; }
+    .extract-dot.ok { background: #12b76a; }
 
     .folder-toggle {
       display: flex; align-items: center; gap: 6px; width: 100%;
@@ -272,6 +276,7 @@
           <button type="button" id="collapseAll" title="Plegar / desplegar todo">⇅</button>
         </span>
       </div>
+      <div class="extract-status" id="extractStatus" hidden></div>
       <div class="pdf-list" id="pdfList"></div>
       <p class="empty" id="empty">No hay archivos con ese filtro.</p>
     </aside>
@@ -516,10 +521,11 @@
       }
 
       try {
-        const response = await fetch('/api/extract?path=' + encodeURIComponent(file.path), { cache: 'no-store' });
+        const response = await fetch('/api/extract?force=1&path=' + encodeURIComponent(file.path), { cache: 'no-store' });
         const data = await response.json();
         if (!data.ok) throw new Error(data.error || 'No se pudo extraer');
-        showToast(`Extracción guardada en ${data.folder} (${data.images} imágenes)`);
+        showToast(`Extracción rehecha en ${data.folder} (${data.images} imágenes)`);
+        loadFiles();
       } catch (error) {
         uiAlert(error.message, 'Error al extraer');
       }
@@ -565,6 +571,7 @@
         <span class="file-icon ${kind}">${kind.toUpperCase()}</span>
         <span class="pdf-name">${escapeHtml(prettyName(file.name).replace(/\.(md|tex)$/i, ''))}</span>
         <span class="pdf-file">${pagesText}</span>
+        ${kind === 'pdf' ? `<span class="extract-dot${file.extracted ? ' ok' : ''}" title="${file.extracted ? 'Texto e imágenes ya extraídos' : 'Pendiente de extraer'}"></span>` : ''}
       `;
 
       const actions = document.createElement('span');
@@ -575,7 +582,7 @@
         link.target = 'pdfViewer';
         link.addEventListener('click', () => setActive(item, file));
         actions.appendChild(actionButton('✎', 'Renombrar', () => renameFile(file, item)));
-        actions.appendChild(actionButton('⇩', 'Extraer texto e imágenes a carpeta', () => extractFile(file)));
+        actions.appendChild(actionButton('↻', 'Rehacer la extracción de texto e imágenes', () => extractFile(file)));
         actions.appendChild(actionButton('👁', 'Ver texto e imágenes', () => previewFile(file, item)));
       } else {
         link.href = '#';
@@ -702,6 +709,34 @@
       } catch (e) { /* servidor no disponible */ }
     }
     setInterval(watchFolder, 2000);
+
+    // Progreso de la extracción automática (se hace sola en el servidor)
+    const extractStatus = document.getElementById('extractStatus');
+    let wasRunning = false;
+    async function watchExtraction() {
+      if (document.hidden || !apiEnabled) return;
+      try {
+        const s = await (await fetch('/api/extract-status', { cache: 'no-store' })).json();
+        const errors = Object.keys(s.errors || {});
+        if (s.running) {
+          const name = (s.current || '').split('/').pop();
+          extractStatus.className = 'extract-status';
+          extractStatus.textContent = `Extrayendo texto e imágenes ${s.done + 1}/${s.total} · ${name}`;
+          extractStatus.title = s.current || '';
+          extractStatus.hidden = false;
+        } else if (errors.length) {
+          extractStatus.className = 'extract-status warn';
+          extractStatus.textContent = `${errors.length} PDF no se pudieron extraer (pasa el ratón para ver cuáles)`;
+          extractStatus.title = errors.map((k) => k + ': ' + s.errors[k]).join('\n');
+          extractStatus.hidden = false;
+        } else {
+          extractStatus.hidden = true;
+        }
+        if (wasRunning && !s.running) loadFiles();
+        wasRunning = s.running;
+      } catch (e) { /* servidor no disponible */ }
+    }
+    setInterval(watchExtraction, 1500);
 
     // Aviso si el servidor en marcha es más antiguo que el código en disco
     (async () => {

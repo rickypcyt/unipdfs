@@ -5,6 +5,7 @@ import re
 import shutil
 import webbrowser
 import config
+import extractor
 import latex_api
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -37,7 +38,7 @@ PORT = 8000
 
 def code_version():
     """Marca de la versión del código en disco (para avisar si el servidor está desactualizado)."""
-    return max(int((ROOT / name).stat().st_mtime) for name in ("servidor.py", "latex_api.py", "config.py"))
+    return max(int((ROOT / name).stat().st_mtime) for name in ("servidor.py", "latex_api.py", "config.py", "extractor.py"))
 
 
 STARTED_CODE = code_version()
@@ -55,15 +56,15 @@ def get_page_count(pdf_path):
     if key in PAGE_CACHE:
         return PAGE_CACHE[key]
 
-    pages = None
-    if PdfReader is not None:
+    pages = extractor.cached_pages(pdf_path)
+    if pages is None and PdfReader is not None:
         try:
             pages = len(PdfReader(str(pdf_path)).pages)
         except Exception:
             pages = None
     if pages is None and pymupdf is not None:
         try:
-            with pymupdf.open(str(pdf_path)) as doc:
+            with extractor.PDF_LOCK, pymupdf.open(str(pdf_path)) as doc:
                 pages = doc.page_count
         except Exception:
             pages = None
@@ -72,62 +73,22 @@ def get_page_count(pdf_path):
     return pages
 
 
-def extract_pdf_to_folder(pdf_path):
-    if pymupdf is None:
-        raise RuntimeError("PyMuPDF no está disponible en este Python")
-
-    output_dir = pdf_path.parent / (pdf_path.stem + "_extraido")
-    if output_dir.is_dir():
-        shutil.rmtree(output_dir)
-    elif output_dir.exists():
-        output_dir.unlink()
-
-    images_dir = output_dir / "imagenes"
-    images_dir.mkdir(parents=True)
-
-    text_parts = []
-    seen_images = set()
-    image_count = 0
-
-    doc = pymupdf.open(str(pdf_path))
-    try:
-        for index in range(len(doc)):
-            page = doc.load_page(index)
-            page_number = index + 1
-            text_parts.append(f"--- Página {page_number} ---\n{page.get_text('text')}\n")
-
-            for image_info in page.get_images(full=True):
-                xref = image_info[0]
-                if xref in seen_images:
-                    continue
-                seen_images.add(xref)
-                try:
-                    image = doc.extract_image(xref)
-                except Exception:
-                    continue
-                data = image.get("image")
-                if not data:
-                    continue
-                image_count += 1
-                extension = image.get("ext") or "png"
-                (images_dir / f"img_{image_count:03d}_p{page_number}.{extension}").write_bytes(data)
-    finally:
-        doc.close()
-
-    (output_dir / "texto.txt").write_text("\n".join(text_parts), encoding="utf-8")
-
+def extract_pdf_to_folder(pdf_path, force=False):
+    output_dir, action = extractor.ensure(pdf_path, force=force)
+    marker = extractor._read_marker(output_dir) or {}
+    images = marker.get("images")
+    if images is None:
+        images = sum(1 for _ in (output_dir / "imagenes").glob("*")) if (output_dir / "imagenes").is_dir() else 0
     return {
         "folder": output_dir.relative_to(source_root()).as_posix(),
-        "pages": len(text_parts),
-        "images": image_count,
+        "pages": marker.get("pages"),
+        "images": images,
+        "action": action,
     }
 
 
 def ensure_extraction(pdf_path):
-    output_dir = pdf_path.parent / (pdf_path.stem + "_extraido")
-    if not (output_dir / "texto.txt").exists():
-        extract_pdf_to_folder(pdf_path)
-    return output_dir
+    return extractor.ensure(pdf_path)[0]
 
 
 def static_url(rel_path):
@@ -247,7 +208,7 @@ class Handler(SimpleHTTPRequestHandler):
             sig = []
             if base is not None:
                 for p in base.rglob("*"):
-                    if "_extraido" in p.parts[len(base.parts):]:
+                    if extractor.skipped(p.relative_to(base).parts):
                         continue
                     try:
                         if p.is_dir():
@@ -268,7 +229,7 @@ class Handler(SimpleHTTPRequestHandler):
             files, folders = [], []
             for item in base.rglob("*"):
                 rel = item.relative_to(base)
-                if any(part.startswith((".", "_")) or part.endswith("_extraido") for part in rel.parts):
+                if extractor.skipped(rel.parts):
                     continue
                 if item.is_dir():
                     folders.append(rel.as_posix())
@@ -285,11 +246,16 @@ class Handler(SimpleHTTPRequestHandler):
                     "size": stat.st_size,
                     "modified": int(stat.st_mtime),
                     "pages": get_page_count(item) if kind == "pdf" else None,
+                    "extracted": extractor.is_fresh(item) if kind == "pdf" else None,
                 })
             files.sort(key=lambda item: (item["folder"].lower(), item["name"].lower()))
             subjects = sorted((f for f in folders if "/" not in f), key=str.lower)
             self._json({"configured": True, "root": str(base), "files": files,
                         "folders": folders, "subjects": subjects})
+            return
+
+        if path == "/api/extract-status":
+            self._json(extractor.status())
             return
 
         if path == "/api/extract":
@@ -300,7 +266,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"ok": False, "error": error}, 400 if "Falta" in error or "válida" in error else 404)
                 return
             try:
-                result = extract_pdf_to_folder(pdf)
+                result = extract_pdf_to_folder(pdf, force=query.get("force", ["0"])[0] == "1")
             except Exception as exc:
                 self._json({"ok": False, "error": str(exc)}, 500)
                 return
@@ -386,6 +352,7 @@ class Handler(SimpleHTTPRequestHandler):
                 chosen = config.pick_folder()
                 if chosen:
                     config.set_root(chosen)
+                    extractor.wake()
                 self._json({"ok": True, "chosen": bool(chosen), "root": chosen})
             except Exception as exc:
                 self._json({"ok": False, "error": str(exc)}, 500)
@@ -445,6 +412,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main():
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    extractor.start()
     url = f"http://localhost:{PORT}"
     print(f"Servidor listo en {url}")
     print("Presiona Ctrl+C para detenerlo.")
