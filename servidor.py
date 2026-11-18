@@ -224,6 +224,26 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/api/signature":
+            base = config.root()
+            sig = []
+            if base is not None:
+                for p in base.rglob("*"):
+                    if "_extraido" in p.parts[len(base.parts):]:
+                        continue
+                    try:
+                        if p.is_dir():
+                            sig.append(f"d{p.relative_to(base)}")
+                        elif p.suffix.lower() in (".pdf", ".tex", ".md"):
+                            st = p.stat()
+                            sig.append(f"{p.relative_to(base)}|{st.st_mtime_ns}|{st.st_size}")
+                    except OSError:
+                        pass
+            self._json({"sig": str(base) + "
+" + "
+".join(sorted(sig))})
+            return
+
         if path == "/api/files":
             base = config.root()
             if base is None:

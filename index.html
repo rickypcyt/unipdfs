@@ -591,7 +591,7 @@
 
     function createItem(file) {
       const item = document.createElement('article');
-      item.className = 'pdf-item';
+      item.className = 'pdf-item' + (file.path === currentPath ? ' active' : '');
       item.dataset.search = [file.name, prettyName(file.name), file.folder].join(' ').toLowerCase();
 
       const link = document.createElement('a');
@@ -749,6 +749,20 @@
     search.addEventListener('input', applyFilter);
 
     loadFiles();
+
+    // Detecta cambios hechos fuera de la app (Explorador de Windows, etc.)
+    let lastSig = null;
+    async function watchFolder() {
+      if (document.hidden) return;
+      try {
+        const res = await fetch('/api/signature', { cache: 'no-store' });
+        const { sig } = await res.json();
+        if (lastSig !== null && sig !== lastSig) await loadFiles();
+        lastSig = sig;
+      } catch (e) { /* servidor no disponible */ }
+    }
+    setInterval(watchFolder, 2000);
+    document.addEventListener('visibilitychange', watchFolder);
   </script>
   <script src="lab.js"></script>
 </body>
