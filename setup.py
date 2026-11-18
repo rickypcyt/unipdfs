@@ -26,6 +26,20 @@ def asset():
     return None, None
 
 
+def warm_cache(exe_path):
+    """Compila un documento con los paquetes habituales para que Tectonic los descargue ahora, una sola vez.
+    Después se compila sin red: Tectonic guarda todo en su caché local."""
+    import tempfile
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import latex_api
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "calentar.tex").write_text(latex_api.TEMPLATE, encoding="utf-8")
+        print("==> Descargando los paquetes LaTeX habituales (solo esta vez)")
+        r = subprocess.run([str(exe_path), "-X", "compile", "--outdir", tmp, str(Path(tmp) / "calentar.tex")],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        print("    listo" if r.returncode == 0 else "    no se pudo (sin internet?); se descargarán al compilar por primera vez")
+
+
 def main():
     print("==> Instalando PyMuPDF")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-r",
@@ -37,6 +51,7 @@ def main():
         return
     if (DEST / exe).exists():
         print("==> Tectonic ya instalado")
+        warm_cache(DEST / exe)
         return
     print("==> Descargando Tectonic", VERSION)
     DEST.mkdir(parents=True, exist_ok=True)
@@ -48,6 +63,7 @@ def main():
     path = DEST / exe
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
     print("==> Listo:", path)
+    warm_cache(path)
 
 
 if __name__ == "__main__":

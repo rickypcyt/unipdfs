@@ -37,3 +37,9 @@ Luego eliges la asignatura en el desplegable de la barra lateral (el botón **+*
 
 ## Licencia
 MIT
+
+## Paquetes LaTeX y caché
+Tectonic descarga los paquetes LaTeX que necesita **una sola vez** y los guarda en su caché local
+(Windows: `%LOCALAPPDATA%\TectonicProject`; Linux/macOS: `~/.cache/Tectonic`). `setup.py` precarga los
+habituales al instalar, así que después compilar funciona sin internet. Solo si un `.tex` usa un paquete
+nuevo se descargará ese paquete la primera vez.
