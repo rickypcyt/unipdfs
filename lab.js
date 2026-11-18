@@ -138,12 +138,13 @@
     await refreshList(path);
     syncButtons();
     if (isMd()) { renderMd(); say('Listo', 'ok'); return; }
-    // Si el .tex aún no tiene PDF, no se carga (daría 404): se compila solo.
+    // El PDF compilado se guarda junto al .tex: si existe y está al día se muestra sin recompilar.
     const pdf = path.replace(/\.tex$/i, '.pdf');
-    const head = await fetch(pdfSrc(pdf).split('#')[0], { method: 'HEAD', cache: 'no-store' }).catch(() => null);
-    if (head && head.ok) { showPdf(pdfSrc(pdf)); say('Listo', 'ok'); }
+    const state = d.pdf || {};
+    if (state.exists && !state.stale) { lastPdf = pdf; showPdf(pdfSrc(pdf, state.mtime)); say('PDF guardado · sin recompilar', 'ok'); }
     else {
-      $('labPreview').srcdoc = '<p style="font:15px Segoe UI,Arial,sans-serif;color:#667085;padding:24px">Generando el PDF por primera vez…</p>';
+      $('labPreview').srcdoc = '<p style="font:15px Segoe UI,Arial,sans-serif;color:#667085;padding:24px">' +
+        (state.stale ? 'El .tex cambió desde la última compilación: recompilando…' : 'Generando el PDF por primera vez…') + '</p>';
       compile();
     }
   }
@@ -246,6 +247,7 @@
   };
 
   window.openLab = async () => { lab.classList.add('open'); await refreshList(cur); syncButtons(); };
+  window.closeLab = () => lab.classList.remove('open');
   window.openLabFile = async (path) => { lab.classList.add('open'); await open(path); };
   window.addEventListener('beforeunload', (e) => { if (dirty) e.preventDefault(); });
 

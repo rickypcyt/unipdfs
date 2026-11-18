@@ -364,7 +364,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if path == "/api/tex-files":
                     self._json({"files": latex_api.list_tex()})
                 elif path == "/api/tex-read":
-                    self._json({"ok": True, "content": latex_api.read_text(rel)})
+                    self._json({"ok": True, "content": latex_api.read_text(rel), "pdf": latex_api.pdf_state(rel)})
                 else:
                     self.send_error(404)
             except Exception as exc:

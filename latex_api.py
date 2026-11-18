@@ -98,6 +98,17 @@ def new_tex(rel):
     return p.relative_to(src()).as_posix()
 
 
+def pdf_state(rel):
+    """¿Ya hay un PDF compilado de este .tex y sigue al día? (así no se recompila al abrirlo)"""
+    p = resolve(rel, {".tex", ".md"})
+    if p.suffix.lower() != ".tex":
+        return {"exists": False, "stale": False}
+    pdf = p.with_suffix(".pdf")
+    if not pdf.is_file():
+        return {"exists": False, "stale": False}
+    return {"exists": True, "stale": pdf.stat().st_mtime_ns < p.stat().st_mtime_ns, "mtime": int(pdf.stat().st_mtime)}
+
+
 def compile_tex(rel):
     p = resolve(rel, {".tex"})
     if not TECTONIC.exists():

@@ -39,9 +39,11 @@
       overflow: hidden;
     }
 
+    .app { --aside-w: 420px; }
+
     aside {
-      width: 360px;
-      flex: 0 0 360px;
+      width: var(--aside-w);
+      flex: 0 0 var(--aside-w);
       background: var(--panel);
       border-right: 1px solid var(--border);
       padding: 20px;
@@ -50,9 +52,30 @@
       overscroll-behavior: contain;
     }
 
-    .app.panel-closed aside {
+    .app.panel-closed aside,
+    .app.panel-closed .resizer {
       display: none;
     }
+
+    /* Borde arrastrable entre la barra lateral y el visor */
+    .resizer {
+      position: relative;
+      flex: 0 0 6px;
+      margin-left: -3px;
+      cursor: col-resize;
+      z-index: 20;
+    }
+    .resizer::after {
+      content: "";
+      position: absolute;
+      inset: 0 2px;
+      background: transparent;
+      transition: background .12s;
+    }
+    .resizer:hover::after,
+    .app.resizing .resizer::after { background: var(--accent); }
+    .app.resizing { cursor: col-resize; user-select: none; }
+    .app.resizing iframe { pointer-events: none; }
 
     main {
       flex: 1;
@@ -277,6 +300,8 @@
         flex-direction: column;
       }
 
+      .resizer { display: none; }
+
       aside {
         width: 100%;
         flex: none;
@@ -316,6 +341,7 @@
       <div class="pdf-list" id="pdfList"></div>
       <p class="empty" id="empty">No hay archivos con ese filtro.</p>
     </aside>
+    <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" title="Arrastra para cambiar el ancho (doble clic: restablecer)"></div>
 
     <main>
       <div class="toolbar">
@@ -602,6 +628,7 @@
       if (view !== 'pdf' && !apiEnabled) {
         return uiAlert('Para ver texto, Markdown o LaTeX abre la página con iniciar.bat y entra por http://localhost:8000.');
       }
+      if (view !== 'tex' && window.closeLab) window.closeLab(); // el Taller tapa el visor: se cierra
       setActive(item, file);
       item.querySelectorAll('.card-views button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
       const labels = { pdf: '', txt: ' · texto', md: ' · Markdown', tex: ' · LaTeX' };
@@ -782,6 +809,31 @@
     });
 
     search.addEventListener('input', applyFilter);
+
+    // Ancho de la barra lateral: se arrastra el borde y se recuerda
+    (() => {
+      const handle = document.getElementById('resizer');
+      const DEFAULT = 420, MIN = 280;
+      const apply = (w) => app.style.setProperty('--aside-w', Math.round(w) + 'px');
+      try { const saved = Number(localStorage.getItem('asideWidth')); if (saved >= MIN) apply(saved); } catch (e) { /* sin almacenamiento */ }
+      handle.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        app.classList.add('resizing');
+        const move = (e) => apply(Math.min(Math.max(e.clientX, MIN), Math.round(window.innerWidth * 0.7)));
+        const stop = () => {
+          app.classList.remove('resizing');
+          document.removeEventListener('pointermove', move);
+          document.removeEventListener('pointerup', stop);
+          try { localStorage.setItem('asideWidth', parseInt(getComputedStyle(app).getPropertyValue('--aside-w'), 10)); } catch (e) { /* ignorar */ }
+        };
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', stop);
+      });
+      handle.addEventListener('dblclick', () => {
+        apply(DEFAULT);
+        try { localStorage.removeItem('asideWidth'); } catch (e) { /* ignorar */ }
+      });
+    })();
 
     loadFiles();
 

@@ -6,9 +6,14 @@ hash SHA-1 del PDF del que salió. Con eso:
   * si solo cambió la fecha (copiado, tocado) pero el contenido es el mismo, tampoco;
   * si el PDF se renombró, se renombra su carpeta en lugar de extraer de nuevo;
   * si el PDF cambió de verdad, se vuelve a extraer.
+
+Las extracciones ya hechas se dejan como están aunque cambie la versión del programa:
+solo se rehacen si el PDF cambia o si se pide a mano con ↻ (entonces las versiones
+anteriores de texto.md / texto.tex / texto.pdf se guardan en la subcarpeta `anterior/`).
 """
 import hashlib
 import json
+import os
 import shutil
 import threading
 import time
@@ -22,10 +27,11 @@ except Exception:
 import config
 import limpieza
 
-# Sube este número cuando cambie el formato de salida: las extracciones viejas se rehacen solas.
+# Versión del formato con que se hizo cada extracción (solo informativa: no provoca re-extraer).
 FORMAT = 4
 MARKER = ".fuente.json"
-OUTPUTS = ("texto.txt", "texto.md", "texto.tex")
+OUTPUTS = ("texto.txt", "texto.md", "texto.tex")  # lo que se genera
+REQUIRED = ("texto.txt", "texto.md")             # lo imprescindible para considerar hecha una extracción
 
 
 class BlockedError(RuntimeError):
@@ -84,7 +90,7 @@ def is_fresh(pdf):
     """Comprobación rápida (sin leer el PDF): ¿la extracción corresponde a este archivo?"""
     out = output_dir(pdf)
     m = _read_marker(out)
-    if not m or m.get("format") != FORMAT or not all((out / name).exists() for name in OUTPUTS):
+    if not m or not all((out / name).exists() for name in REQUIRED):
         return False
     try:
         st = pdf.stat()
@@ -107,7 +113,7 @@ def _extract(pdf, dest):
     """Extrae a una carpeta temporal y la coloca en `dest` de golpe (nunca queda a medias)."""
     if pymupdf is None:
         raise RuntimeError("PyMuPDF no está disponible en este Python")
-    tmp = pdf.parent / ("." + dest.name + ".tmp")
+    tmp = pdf.parent / ("." + dest.name + f".{os.getpid()}.tmp")
     if tmp.exists():
         shutil.rmtree(tmp, ignore_errors=True)
     images_dir = tmp / "imagenes"
@@ -231,23 +237,49 @@ def redact_blocked(pages, folder):
         page["blocked"] = len(hits)
 
 
+def fill_tex(out):
+    """Extracciones antiguas sin texto.tex: se genera desde su texto.md (rápido, sin volver a extraer)."""
+    tex, md = out / "texto.tex", out / "texto.md"
+    if tex.exists() or not md.exists():
+        return
+    try:
+        import latex_api
+        tex.write_text(latex_api.markdown_to_latex(md.read_text(encoding="utf-8"), out), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _keep_previous(out, tmp):
+    """Al rehacer a mano una extracción se conservan las versiones anteriores editables."""
+    old = [out / n for n in ("texto.md", "texto.tex", "texto.pdf") if (out / n).exists()]
+    if not old:
+        return
+    (tmp / "anterior").mkdir(exist_ok=True)
+    for f in old:
+        try:
+            shutil.copy2(f, tmp / "anterior" / f.name)
+        except OSError:
+            pass
+
+
 def ensure(pdf, force=False):
     """Deja la extracción de `pdf` al día. Devuelve (carpeta, qué se hizo)."""
     pdf = Path(pdf)
     out = output_dir(pdf)
     with PDF_LOCK:
         if not force and is_fresh(pdf):
+            fill_tex(out)
             return out, "al día"
 
         marker = _read_marker(out)
-
         digest = _sha1(pdf)
-        same_version = bool(marker) and marker.get("sha1") == digest and marker.get("format") == FORMAT
-        missing = [name for name in OUTPUTS if not (out / name).exists()]
-        if not force and same_version and not missing:
+        same_content = bool(marker) and marker.get("sha1") == digest
+        missing = [name for name in REQUIRED if not (out / name).exists()]
+        if not force and same_content and not missing:
             _write_marker(out, pdf, digest, marker.get("pages"), marker.get("images"), marker.get("garbled", 0))
+            fill_tex(out)
             return out, "mismo contenido"
-        if not force and same_version and missing:
+        if not force and same_content and missing:
             # Ya se extrajo este mismo contenido y alguien ha borrado archivos (p. ej. Windows Defender
             # con un falso positivo). Re-extraer volvería a pasar lo mismo en bucle: se para aquí.
             raise BlockedError(
@@ -258,20 +290,33 @@ def ensure(pdf, force=False):
             # ¿Se renombró el PDF? Busca una extracción huérfana con el mismo contenido.
             for cand in pdf.parent.glob("*" + SUFFIX):
                 m = _read_marker(cand)
-                if (cand.is_dir() and m and m.get("sha1") == digest and m.get("format") == FORMAT
+                if (cand.is_dir() and m and m.get("sha1") == digest
                         and not (pdf.parent / m.get("pdf", "")).exists()):
                     cand.rename(out)
                     _write_marker(out, pdf, digest, m.get("pages"), m.get("images"), m.get("garbled", 0))
+                    fill_tex(out)
                     return out, "renombrada"
 
         tmp, pages, images, garbled = _extract(pdf, out)
         _write_marker(tmp, pdf, digest, pages, images, garbled)
         if out.is_dir():
+            _keep_previous(out, tmp)
             shutil.rmtree(out)
         elif out.exists():
             out.unlink()
         tmp.rename(out)
         return out, "extraída"
+
+
+MAX_WORKERS = 4  # PDF extraídos a la vez
+
+
+def _job(path):
+    """Trabajo de un proceso hijo: extrae un PDF. Devuelve (acción, error)."""
+    try:
+        return ensure(Path(path))[1], None
+    except Exception as exc:
+        return None, str(exc)
 
 
 def status():
@@ -302,19 +347,48 @@ def _scan_once():
     errors = {}
     with _status_lock:
         _status.update(running=bool(pending), done=0, total=len(pending), current="")
-    for i, pdf in enumerate(pending):
+
+    def fail(pdf, rel, message):
+        errors[rel] = message
+        try:
+            st = pdf.stat()
+            _failed[str(pdf)] = (st.st_size, st.st_mtime_ns)
+        except OSError:
+            pass
+
+    remaining = list(pending)
+    workers = min(MAX_WORKERS, os.cpu_count() or 2, len(pending))
+    if workers > 1:
+        # Varios PDF a la vez, cada uno en su proceso (PyMuPDF no es seguro entre hilos).
+        try:
+            from concurrent.futures import ProcessPoolExecutor, as_completed
+            with ProcessPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(_job, str(p)): p for p in pending}
+                done = 0
+                for future in as_completed(futures):
+                    pdf = futures[future]
+                    rel = pdf.relative_to(base).as_posix()
+                    done += 1
+                    remaining.remove(pdf)
+                    try:
+                        _, error = future.result()
+                    except Exception as exc:
+                        error = str(exc)
+                    if error:
+                        fail(pdf, rel, error)
+                    with _status_lock:
+                        nxt = remaining[0].relative_to(base).as_posix() if remaining else ""
+                        _status.update(done=done, current=nxt)
+        except Exception:
+            pass  # sin procesos disponibles: lo que falte se hace uno a uno
+    for i, pdf in enumerate(remaining):
         rel = pdf.relative_to(base).as_posix()
         with _status_lock:
-            _status.update(current=rel, done=i)
+            _status.update(current=rel, done=len(pending) - len(remaining) + i)
         try:
             ensure(pdf)
         except Exception as exc:  # p. ej. PDF a medio copiar o protegido
-            errors[rel] = str(exc)
-            try:
-                st = pdf.stat()
-                _failed[str(pdf)] = (st.st_size, st.st_mtime_ns)
-            except OSError:
-                pass
+            fail(pdf, rel, str(exc))
     # Se conservan los fallos anteriores solo mientras el PDF siga existiendo y sin extraer.
     with _status_lock:
         previous = dict(_status["errors"])
