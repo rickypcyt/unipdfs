@@ -23,7 +23,7 @@ import config
 import limpieza
 
 # Sube este número cuando cambie el formato de salida: las extracciones viejas se rehacen solas.
-FORMAT = 3
+FORMAT = 4
 MARKER = ".fuente.json"
 OUTPUTS = ("texto.txt", "texto.md", "texto.tex")
 
@@ -64,11 +64,11 @@ def _read_marker(folder):
         return None
 
 
-def _write_marker(folder, pdf, sha1, pages, images):
+def _write_marker(folder, pdf, sha1, pages, images, garbled=0):
     st = pdf.stat()
     (folder / MARKER).write_text(json.dumps({
         "pdf": pdf.name, "size": st.st_size, "mtime_ns": st.st_mtime_ns,
-        "sha1": sha1, "pages": pages, "images": images, "format": FORMAT,
+        "sha1": sha1, "pages": pages, "images": images, "garbled": garbled, "format": FORMAT,
     }, ensure_ascii=False), encoding="utf-8")
 
 
@@ -91,6 +91,11 @@ def is_fresh(pdf):
     except OSError:
         return False
     return m.get("size") == st.st_size and m.get("mtime_ns") == st.st_mtime_ns
+
+
+def garbled_pages(pdf):
+    m = _read_marker(output_dir(pdf)) if is_fresh(pdf) else None
+    return (m or {}).get("garbled") or 0
 
 
 def cached_pages(pdf):
@@ -141,13 +146,24 @@ def _extract(pdf, dest):
     finally:
         doc.close()
 
+    # Páginas con texto ilegible: se incluye su imagen (la primera de la página) en lugar del texto roto.
+    doc = pymupdf.open(str(pdf))
+    try:
+        for p in pages:
+            if p.get("garbled") and not p["duplicate_of"]:
+                name = f"pagina_{p['number']:03d}.png"
+                doc[p["number"] - 1].get_pixmap(dpi=110).save(str(images_dir / name))
+                by_page.setdefault(p["number"], []).insert(0, "imagenes/" + name)
+    finally:
+        doc.close()
+    garbled_pages = sum(1 for p in pages if p.get("garbled"))
     md = limpieza.to_markdown(pages, limpieza.pretty_title(pdf.stem), by_page)
     (tmp / "texto.txt").write_text(limpieza.to_text(pages), encoding="utf-8")
     (tmp / "texto.md").write_text(md, encoding="utf-8")
     # Versión LaTeX lista para editar y compilar en el Taller (las imágenes van con ruta relativa).
     import latex_api
     (tmp / "texto.tex").write_text(latex_api.markdown_to_latex(md, tmp), encoding="utf-8")
-    return tmp, len(pages), count
+    return tmp, len(pages), count, garbled_pages
 
 
 def ensure(pdf, force=False):
@@ -164,7 +180,7 @@ def ensure(pdf, force=False):
         same_version = bool(marker) and marker.get("sha1") == digest and marker.get("format") == FORMAT
         missing = [name for name in OUTPUTS if not (out / name).exists()]
         if not force and same_version and not missing:
-            _write_marker(out, pdf, digest, marker.get("pages"), marker.get("images"))
+            _write_marker(out, pdf, digest, marker.get("pages"), marker.get("images"), marker.get("garbled", 0))
             return out, "mismo contenido"
         if not force and same_version and missing:
             # Ya se extrajo este mismo contenido y alguien ha borrado archivos (p. ej. Windows Defender
@@ -180,11 +196,11 @@ def ensure(pdf, force=False):
                 if (cand.is_dir() and m and m.get("sha1") == digest and m.get("format") == FORMAT
                         and not (pdf.parent / m.get("pdf", "")).exists()):
                     cand.rename(out)
-                    _write_marker(out, pdf, digest, m.get("pages"), m.get("images"))
+                    _write_marker(out, pdf, digest, m.get("pages"), m.get("images"), m.get("garbled", 0))
                     return out, "renombrada"
 
-        tmp, pages, images = _extract(pdf, out)
-        _write_marker(tmp, pdf, digest, pages, images)
+        tmp, pages, images, garbled = _extract(pdf, out)
+        _write_marker(tmp, pdf, digest, pages, images, garbled)
         if out.is_dir():
             shutil.rmtree(out)
         elif out.exists():

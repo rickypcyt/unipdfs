@@ -16,6 +16,15 @@ NUMBER_ONLY = re.compile(r"^\(?\d{1,2}(\.\d{1,2})*[.)]?$")
 NUMBERED = re.compile(r"^(\d{1,2}(?:\.\d{1,2})*)[.)]\s+(.*)")
 
 
+# Texto con la fuente rota: signos como ’ ‘ ´ % pegados dentro de las palabras ("TOk6k‘kGk").
+_INNER = re.compile(r"[A-Za-zÀ-ÿ0-9][’‘´ˆ`ͻ][A-Za-zÀ-ÿ0-9’‘´]|[A-Za-zÀ-ÿ]%(?![0-9A-Fa-f]{2})[A-Za-zÀ-ÿ’‘´]")
+
+
+def is_garbled(line):
+    n = len(_INNER.findall(line))
+    return n >= 2 or (n >= 1 and len(line.split()) <= 3)
+
+
 def _clean(text):
     text = text.replace(" ", " ").replace("\t", " ")
     text = re.sub(r"(?<=\s)à(?=\s)", "→", text)  # flecha de Wingdings
@@ -89,6 +98,8 @@ def analyze(doc):
         number = index + 1
         rows = [r for r in rows
                 if _norm(r["text"]) not in repeated and r["text"] != str(number)]
+        garbled = [r for r in rows if is_garbled(r["text"])]
+        rows = [r for r in rows if r not in garbled]
 
         title = ""
         if rows:
@@ -104,7 +115,8 @@ def analyze(doc):
         duplicate = seen.get(key) if items else None
         if duplicate is None and items:
             seen[key] = number
-        pages.append({"number": number, "title": title, "items": items, "duplicate_of": duplicate})
+        pages.append({"number": number, "title": title, "items": items, "duplicate_of": duplicate,
+                      "garbled": len(garbled)})
     return pages
 
 
@@ -179,6 +191,9 @@ def to_markdown(pages, title="", images=None):
             out.append(f"## {p['title']}")
         out += [f"<sub>p. {n}</sub>", ""]
         prev_kind = None
+        if p.get("garbled"):
+            out += ["> ⚠ Parte del texto de esta diapositiva no se puede leer (la fuente del PDF está dañada). "
+                    "Se muestra la imagen de la página.", ""]
         for kind, level, text in p["items"]:
             text = text.replace("*", "\\*")
             if kind == "p":
@@ -193,7 +208,7 @@ def to_markdown(pages, title="", images=None):
             out.append("")
         for img in images.get(n, []):
             out += [f"![p. {n}]({img})", ""]
-        if not p["items"] and not images.get(n):
+        if not p["items"] and not images.get(n) and not p.get("garbled"):
             out += ["*(diapositiva sin texto)*", ""]
     return "\n".join(out).strip() + "\n"
 
@@ -206,6 +221,8 @@ def to_text(pages):
             out += [f"=== p. {n} (repite la p. {p['duplicate_of']}) ===", ""]
             continue
         out.append(f"=== p. {n}" + (f" · {p['title']}" if p["title"] else "") + " ===")
+        if p.get("garbled"):
+            out.append(f"[texto ilegible en esta página: fuente dañada en el PDF; ver imagenes/pagina_{n:03d}.png]")
         for kind, level, text in p["items"]:
             if kind == "ul":
                 out.append(("    ◦ " if level else "  • ") + text)
