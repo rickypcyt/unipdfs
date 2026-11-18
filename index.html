@@ -94,64 +94,77 @@
       font-size: 14px;
     }
 
-    /* Explorador tipo Obsidian: todas las asignaturas en un árbol compacto */
-    .tree-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-    .tree-head .tree-actions { display: flex; gap: 2px; }
-    .tree-head button { width: 26px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 15px; cursor: pointer; }
-    .tree-head button:hover { background: #eef2f7; color: var(--text); }
+    /* Asignaturas y temas como tarjetas */
+    .tree-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 10px; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    .tree-head .tree-actions { display: flex; gap: 6px; }
+    .tree-head button { min-width: 32px; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); font-size: 15px; cursor: pointer; }
+    .tree-head button:hover { border-color: var(--accent); color: var(--accent); }
 
-    .pdf-list { display: block; font-size: 13.5px; }
-    .extract-status { margin: 0 0 8px; padding: 6px 8px; border-radius: 6px; background: #eef4ff; color: #1849a9; font-size: 12px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .extract-status { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: #eef4ff; color: #1849a9; font-size: 12px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .extract-status.warn { background: #fff8e6; color: #7a5b00; }
-    .extract-dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: #d0d5dd; }
-    .extract-dot.ok { background: #12b76a; }
+
+    .pdf-list { display: grid; gap: 10px; }
+    .folder-node { display: grid; gap: 8px; }
 
     .folder-toggle {
-      display: flex; align-items: center; gap: 6px; width: 100%;
-      padding: 4px 6px; border: 0; border-radius: 6px; background: transparent;
-      color: var(--text); font: inherit; font-weight: 600; text-align: left; cursor: pointer;
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px;
+      background: #fff; color: var(--text); font-size: 14px; font-weight: 700; text-align: left; cursor: pointer;
     }
-    .folder-toggle:hover { background: #eef2f7; }
-    .pdf-list > .folder-node > .folder-toggle { font-weight: 800; }
+    .folder-toggle:hover { border-color: var(--accent); }
+    .pdf-list > .folder-node > .folder-toggle { background: #f8fafc; font-size: 15px; font-weight: 800; }
 
     .folder-arrow {
       flex-shrink: 0; width: 0; height: 0;
-      border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 6px solid var(--muted);
-      transition: transform .12s ease;
+      border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid var(--muted);
+      transition: transform .15s ease;
     }
     .folder-node:not(.collapsed) > .folder-toggle .folder-arrow { transform: rotate(90deg); }
-    .folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .folder-count { flex-shrink: 0; color: var(--muted); font-size: 11px; font-weight: 600; }
-
-    .folder-children { margin-left: 9px; padding-left: 8px; border-left: 1px solid var(--border); }
+    .folder-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .folder-count {
+      flex-shrink: 0; min-width: 28px; height: 22px; padding: 0 8px; border-radius: 999px;
+      background: #eef2f7; color: #344054; font-size: 12px; font-weight: 700; line-height: 22px; text-align: center;
+    }
+    .folder-children { display: grid; gap: 8px; margin-top: 2px; padding-left: 14px; border-left: 1px solid var(--border); }
     .folder-node.collapsed > .folder-children { display: none; }
-    .pdf-list.searching .folder-node.collapsed > .folder-children { display: block; }
+    .pdf-list.searching .folder-node.collapsed > .folder-children { display: grid; }
 
-    .pdf-item { position: relative; display: flex; align-items: center; gap: 4px; border-radius: 6px; }
-    .pdf-item:hover { background: #eef2f7; }
-    .pdf-item.active { background: var(--accent-soft); }
-    .pdf-item.active .pdf-name { color: var(--accent); }
-
-    .pdf-open {
-      flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
-      padding: 4px 6px; color: inherit; text-decoration: none; cursor: pointer;
+    .pdf-item {
+      display: grid; gap: 10px; padding: 12px;
+      border: 1px solid var(--border); border-radius: 10px; background: #fff;
+      transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
     }
-    .file-icon { flex-shrink: 0; width: 16px; text-align: center; font-size: 10px; font-weight: 800; color: var(--muted); }
-    .file-icon.pdf { color: #d92d20; }
-    .file-icon.md { color: #7a5af8; }
-    .file-icon.tex { color: #039855; }
-    .pdf-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pdf-file { flex-shrink: 0; color: var(--muted); font-size: 11px; }
+    .pdf-item:hover { border-color: #b2c5ff; }
+    .pdf-item.active { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent); }
 
-    .item-actions { display: none; flex-shrink: 0; gap: 2px; padding-right: 4px; }
-    .pdf-item:hover .item-actions { display: flex; }
-    .item-actions button {
-      width: 24px; height: 22px; border: 0; border-radius: 5px; background: transparent;
-      color: var(--muted); font-size: 12px; cursor: pointer;
+    .card-top { display: flex; align-items: flex-start; gap: 8px; }
+    .pdf-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; color: inherit; text-decoration: none; cursor: pointer; }
+    .pdf-name { font-size: 14px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+    .pdf-file { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+    .file-icon { padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 800; letter-spacing: .04em; background: #f2f4f7; color: var(--muted); }
+    .file-icon.pdf { background: #fef3f2; color: #b42318; }
+    .file-icon.md { background: #f4f3ff; color: #5925dc; }
+    .file-icon.tex { background: #ecfdf3; color: #027a48; }
+    .badge { padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .badge.ok { background: #ecfdf3; color: #027a48; }
+    .badge.wait { background: #f2f4f7; color: #667085; }
+
+    .card-tools { display: flex; gap: 4px; flex-shrink: 0; }
+    .card-tools button {
+      width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 8px;
+      background: #fff; color: var(--muted); font-size: 14px; cursor: pointer;
     }
-    .item-actions button:hover { background: #dfe5ee; color: var(--accent); }
+    .card-tools button:hover { border-color: var(--accent); color: var(--accent); }
 
-    .rename-input { flex: 1; min-width: 0; height: 26px; margin: 1px 0; padding: 0 6px; border: 1px solid var(--accent); border-radius: 5px; font: inherit; outline: none; }
+    .card-views { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .card-views button {
+      padding: 7px 4px; border: 1px solid var(--border); border-radius: 8px;
+      background: #fff; color: var(--text); font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .card-views button:hover { border-color: var(--accent); color: var(--accent); }
+    .card-views button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .rename-input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border: 2px solid var(--accent); border-radius: 8px; font-size: 14px; outline: none; }
 
     .empty {
       display: none;
@@ -454,8 +467,8 @@
         uiAlert('Para renombrar archivos abre la página con iniciar.bat y entra por http://localhost:8000.');
         return;
       }
-      const link = item.querySelector('a');
-      const actions = item.querySelector('.item-actions');
+      const link = item.querySelector('.pdf-open');
+      const actions = item.querySelector('.card-tools');
       if (!link || item.querySelector('.rename-input')) return;
       if (actions) actions.style.visibility = 'hidden';
 
@@ -463,7 +476,7 @@
       input.className = 'rename-input';
       input.value = file.name;
       link.style.display = 'none';
-      item.insertBefore(input, link);
+      link.parentNode.insertBefore(input, link);
       input.focus();
       input.setSelectionRange(0, file.name.replace(/\.pdf$/i, '').length);
 
@@ -557,43 +570,92 @@
       return button;
     }
 
+    function extractionDir(file) {
+      return file.path.replace(/\.pdf$/i, '') + '_extraido';
+    }
+
+    // Abre una vista de la tarjeta. Las de texto aseguran antes la extracción (si ya está, no repite nada).
+    async function openView(file, item, view) {
+      if (view !== 'pdf' && !apiEnabled) {
+        return uiAlert('Para ver texto, Markdown o LaTeX abre la página con iniciar.bat y entra por http://localhost:8000.');
+      }
+      setActive(item, file);
+      item.querySelectorAll('.card-views button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
+      const labels = { pdf: '', txt: ' · texto', md: ' · Markdown', tex: ' · LaTeX' };
+      currentFile.textContent = file.name + labels[view];
+      if (view === 'pdf') {
+        viewer.src = pdfUrl(file.path);
+        openNew.href = pdfUrl(file.path);
+        return;
+      }
+      if (view === 'md') {
+        const url = '/api/preview?path=' + encodeURIComponent(file.path);
+        viewer.src = url;
+        openNew.href = url;
+        return;
+      }
+      if (view === 'txt') {
+        const url = '/api/view?kind=txt&path=' + encodeURIComponent(file.path);
+        viewer.src = url;
+        openNew.href = url;
+        return;
+      }
+      // LaTeX: se abre en el Taller para editarlo y compilarlo
+      const r = await (await fetch('/api/extract?path=' + encodeURIComponent(file.path), { cache: 'no-store' })).json().catch(() => ({ ok: false, error: 'Servidor no disponible' }));
+      if (!r.ok) return uiAlert(r.error || 'No se pudo preparar el LaTeX', 'LaTeX');
+      if (window.openLabFile) window.openLabFile(extractionDir(file) + '/texto.tex');
+    }
+
     function createItem(file) {
       const kind = file.kind || 'pdf';
       const item = document.createElement('article');
       item.className = 'pdf-item' + (file.path === currentPath ? ' active' : '');
       item.dataset.search = [file.name, prettyName(file.name), file.folder].join(' ').toLowerCase();
-      item.title = file.path;
+
+      const top = document.createElement('div');
+      top.className = 'card-top';
 
       const link = document.createElement('a');
       link.className = 'pdf-open';
-      const pagesText = file.pages ? file.pages + ' p.' : '';
+      link.title = file.path;
+      const pagesText = file.pages ? `<span>${pageLabel(file.pages)}</span>` : '';
+      const badge = kind === 'pdf'
+        ? (file.extracted ? '<span class="badge ok">texto listo</span>' : '<span class="badge wait">pendiente</span>')
+        : '';
       link.innerHTML = `
-        <span class="file-icon ${kind}">${kind.toUpperCase()}</span>
         <span class="pdf-name">${escapeHtml(prettyName(file.name).replace(/\.(md|tex)$/i, ''))}</span>
-        <span class="pdf-file">${pagesText}</span>
-        ${kind === 'pdf' ? `<span class="extract-dot${file.extracted ? ' ok' : ''}" title="${file.extracted ? 'Texto e imágenes ya extraídos' : 'Pendiente de extraer'}"></span>` : ''}
+        <span class="pdf-file"><span class="file-icon ${kind}">${kind.toUpperCase()}</span>${pagesText}${badge}</span>
       `;
+      top.appendChild(link);
 
-      const actions = document.createElement('span');
-      actions.className = 'item-actions';
+      const tools = document.createElement('div');
+      tools.className = 'card-tools';
+      top.appendChild(tools);
+      item.appendChild(top);
 
       if (kind === 'pdf') {
         link.href = pdfUrl(file.path);
         link.target = 'pdfViewer';
-        link.addEventListener('click', () => setActive(item, file));
-        actions.appendChild(actionButton('✎', 'Renombrar', () => renameFile(file, item)));
-        actions.appendChild(actionButton('↻', 'Rehacer la extracción de texto e imágenes', () => extractFile(file)));
-        actions.appendChild(actionButton('👁', 'Ver texto e imágenes', () => previewFile(file, item)));
+        link.addEventListener('click', (event) => { event.preventDefault(); openView(file, item, 'pdf'); });
+        tools.appendChild(actionButton('✎', 'Renombrar', () => renameFile(file, item)));
+        tools.appendChild(actionButton('↻', 'Rehacer la extracción de texto e imágenes', () => extractFile(file)));
+
+        const views = document.createElement('div');
+        views.className = 'card-views';
+        [['pdf', 'PDF'], ['txt', 'Texto'], ['md', 'Markdown'], ['tex', 'LaTeX']].forEach(([view, label]) => {
+          const button = actionButton(label, 'Ver en ' + label, () => openView(file, item, view));
+          button.dataset.view = view;
+          views.appendChild(button);
+        });
+        item.appendChild(views);
       } else {
         link.href = '#';
         link.addEventListener('click', (event) => {
           event.preventDefault();
           if (window.openLabFile) window.openLabFile(file.path);
         });
+        tools.appendChild(actionButton('✎', 'Editar en el Taller', () => window.openLabFile && window.openLabFile(file.path)));
       }
-
-      item.appendChild(link);
-      item.appendChild(actions);
       return item;
     }
 

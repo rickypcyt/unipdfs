@@ -23,7 +23,7 @@ import config
 import limpieza
 
 # Sube este número cuando cambie el formato de salida: las extracciones viejas se rehacen solas.
-FORMAT = 2
+FORMAT = 3
 MARKER = ".fuente.json"
 SUFFIX = "_extraido"
 SCAN_EVERY = 5  # segundos entre revisiones de la carpeta
@@ -79,7 +79,7 @@ def is_fresh(pdf):
     """Comprobación rápida (sin leer el PDF): ¿la extracción corresponde a este archivo?"""
     out = output_dir(pdf)
     m = _read_marker(out)
-    if not m or m.get("format") != FORMAT or not (out / "texto.md").exists():
+    if not m or m.get("format") != FORMAT or not (out / "texto.tex").exists():
         return False
     try:
         st = pdf.stat()
@@ -136,9 +136,12 @@ def _extract(pdf, dest):
     finally:
         doc.close()
 
+    md = limpieza.to_markdown(pages, limpieza.pretty_title(pdf.stem), by_page)
     (tmp / "texto.txt").write_text(limpieza.to_text(pages), encoding="utf-8")
-    (tmp / "texto.md").write_text(limpieza.to_markdown(pages, limpieza.pretty_title(pdf.stem), by_page),
-                                  encoding="utf-8")
+    (tmp / "texto.md").write_text(md, encoding="utf-8")
+    # Versión LaTeX lista para editar y compilar en el Taller (las imágenes van con ruta relativa).
+    import latex_api
+    (tmp / "texto.tex").write_text(latex_api.markdown_to_latex(md, tmp), encoding="utf-8")
     return tmp, len(pages), count
 
 
@@ -152,7 +155,7 @@ def ensure(pdf, force=False):
 
         marker = _read_marker(out)
         # Solo se reutiliza una extracción que ya tenga el formato actual.
-        has_text = (out / "texto.md").exists() and bool(marker) and marker.get("format") == FORMAT
+        has_text = (out / "texto.tex").exists() and bool(marker) and marker.get("format") == FORMAT
 
         digest = _sha1(pdf)
         if not force and has_text and marker.get("sha1") == digest:

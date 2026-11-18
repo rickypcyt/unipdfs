@@ -138,9 +138,44 @@ def build_preview_html(pdf_path, output_dir):
 </body></html>"""
 
 
+def build_text_html(pdf_path, output_dir):
+    """Página para leer texto.txt cómodamente (texto plano con buena tipografía)."""
+    text = (output_dir / "texto.txt").read_text(encoding="utf-8")
+    raw_url = static_url((output_dir / "texto.txt").relative_to(source_root()).as_posix())
+    return f"""<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.escape(pdf_path.stem)} · texto</title>
+<style>
+  body {{ margin: 0; padding: 24px 16px 80px; background: #eef1f5; color: #1f2937; }}
+  .meta {{ max-width: 860px; margin: 0 auto 12px; color: #667085; font: 13px Inter, Segoe UI, Arial, sans-serif; }}
+  .meta a {{ color: #155eef; }}
+  pre {{ max-width: 860px; margin: 0 auto; padding: 32px 40px; background: #fff; border-radius: 4px;
+        box-shadow: 0 4px 18px rgba(16,24,40,.10); white-space: pre-wrap; word-break: break-word;
+        font: 14px/1.6 Consolas, "Cascadia Mono", monospace; }}
+</style></head><body>
+<p class="meta"><a href="{html.escape(raw_url, quote=True)}" download="texto.txt">Descargar texto.txt</a></p>
+<pre>{html.escape(text)}</pre>
+</body></html>"""
+
+
 class Handler(SimpleHTTPRequestHandler):
+    # Los archivos de texto se sirven como UTF-8 (si no, las tildes salen mal)
+    extensions_map = {
+        **SimpleHTTPRequestHandler.extensions_map,
+        ".txt": "text/plain; charset=utf-8",
+        ".md": "text/markdown; charset=utf-8",
+        ".tex": "text/plain; charset=utf-8",
+    }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
+
+    def _html(self, page):
+        body = page.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def log_message(self, format, *args):
         pass
@@ -234,6 +269,19 @@ class Handler(SimpleHTTPRequestHandler):
             subjects = sorted((f for f in folders if "/" not in f), key=str.lower)
             self._json({"configured": True, "root": str(base), "files": files,
                         "folders": folders, "subjects": subjects})
+            return
+
+        if path == "/api/view":
+            query = parse_qs(urlparse(self.path).query)
+            pdf, error = self._resolve_pdf(query.get("path", [""])[0].strip())
+            if error:
+                self._json({"ok": False, "error": error}, 404)
+                return
+            try:
+                output_dir = ensure_extraction(pdf)
+                self._html(build_text_html(pdf, output_dir))
+            except Exception as exc:
+                self._json({"ok": False, "error": str(exc)}, 500)
             return
 
         if path == "/api/extract-status":
