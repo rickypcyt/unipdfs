@@ -207,6 +207,8 @@
       padding: 7px 4px; border: 1px solid var(--border); border-radius: 8px;
       background: #fff; color: var(--text); font-size: 12px; font-weight: 700; cursor: pointer;
     }
+    .card-views.one { grid-template-columns: 1fr; }
+    .card-views.one button { border-color: #b2c5ff; background: #f5f8ff; color: #1849a9; }
     .card-views button:hover { border-color: var(--accent); color: var(--accent); }
     .card-views button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
@@ -634,17 +636,25 @@
 
     // Abre una vista de la tarjeta. Las de texto aseguran antes la extracción (si ya está, no repite nada).
     async function openView(file, item, view) {
-      if (view !== 'pdf' && !apiEnabled) {
+      if (view !== 'pdf' && view !== 'latexpdf' && !apiEnabled) {
         return uiAlert('Para ver texto, Markdown o LaTeX abre la página con iniciar.bat y entra por http://localhost:8000.');
       }
       if (view !== 'tex' && window.closeLab) window.closeLab(); // el Taller tapa el visor: se cierra
       setActive(item, file);
       item.querySelectorAll('.card-views button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
-      const labels = { pdf: '', txt: ' · texto', md: ' · Markdown', tex: ' · LaTeX' };
+      if (view === 'latexpdf' && !file.latexPdf) return;
+      const labels = { pdf: '', txt: ' · texto', md: ' · Markdown', tex: ' · LaTeX', latexpdf: ' · PDF LaTeX' };
       currentFile.textContent = file.name + labels[view];
       if (view === 'pdf') {
         viewer.src = pdfUrl(file.path);
         openNew.href = pdfUrl(file.path);
+        return;
+      }
+      if (view === 'latexpdf') {
+        // ?v= evita que el visor muestre una versión anterior guardada en caché
+        const url = pdfUrl(file.latexPdf).replace('#', '?v=' + Date.now() + '#');
+        viewer.src = url;
+        openNew.href = url;
         return;
       }
       if (view === 'md') {
@@ -700,6 +710,26 @@
       uiShow('Caracteres · ' + prettyName(file.name), wrap);
     }
 
+    const LATEX_SUFFIX = ' VersionLatex';
+
+    // "Tema 3/Parte I VersionLatex.pdf" se muestra dentro de la tarjeta de "Tema 3/Parte I.pdf".
+    // Si el original ya no existe, se deja como tarjeta propia para que no se pierda.
+    function attachLatexPdfs(list) {
+      const byPath = new Map(list.map((f) => [f.path, f]));
+      const out = [];
+      list.forEach((file) => {
+        if (file.kind === 'pdf' && file.generated && file.name.endsWith(LATEX_SUFFIX + '.pdf')) {
+          const original = byPath.get(file.path.slice(0, -(LATEX_SUFFIX + '.pdf').length) + '.pdf');
+          if (original) return;
+        }
+        out.push(file);
+      });
+      return out.map((file) => {
+        const generated = byPath.get(file.path.replace(/\.pdf$/i, '') + LATEX_SUFFIX + '.pdf');
+        return file.kind === 'pdf' && !file.generated && generated ? { ...file, latexPdf: generated.path } : file;
+      });
+    }
+
     function createItem(file) {
       const kind = file.kind || 'pdf';
       const generated = !!file.generated;
@@ -749,6 +779,15 @@
           views.appendChild(button);
         });
         item.appendChild(views);
+
+        if (file.latexPdf) {
+          const extra = document.createElement('div');
+          extra.className = 'card-views one';
+          const button = actionButton('PDF LaTeX', 'Ver el PDF generado desde el LaTeX (' + file.latexPdf.split('/').pop() + ')', () => openView(file, item, 'latexpdf'));
+          button.dataset.view = 'latexpdf';
+          extra.appendChild(button);
+          item.appendChild(extra);
+        }
       } else {
         link.href = '#';
         link.addEventListener('click', (event) => {
@@ -804,7 +843,7 @@
         empty.style.display = 'none';
         return;
       }
-      renderNode(buildTree(files, folders), pdfList);
+      renderNode(buildTree(attachLatexPdfs(files), folders), pdfList);
       applyFilter();
     }
 

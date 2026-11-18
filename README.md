@@ -46,5 +46,5 @@ nuevo se descargará ese paquete la primera vez.
 
 ## PDF compilado desde LaTeX
 Al compilar el LaTeX de un PDF (botón **LaTeX** de su tarjeta), el resultado se guarda dentro del propio tema, junto al
-original y con su mismo nombre más ` VersionLatex`, por ejemplo `Tema 3/Parte I VersionLatex.pdf`. Aparece como una
-tarjeta más (marcada «versión LaTeX») y no se vuelve a extraer.
+original y con su mismo nombre más ` VersionLatex`, por ejemplo `Tema 3/Parte I VersionLatex.pdf`. Aparece como un
+botón «PDF LaTeX» dentro de la tarjeta del PDF original (no como tarjeta aparte) y no se vuelve a extraer.
