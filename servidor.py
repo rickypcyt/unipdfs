@@ -239,9 +239,7 @@ class Handler(SimpleHTTPRequestHandler):
                             sig.append(f"{p.relative_to(base)}|{st.st_mtime_ns}|{st.st_size}")
                     except OSError:
                         pass
-            self._json({"sig": str(base) + "
-" + "
-".join(sorted(sig))})
+            self._json({"sig": str(base) + "|" + "|".join(sorted(sig))})
             return
 
         if path == "/api/files":
