@@ -94,149 +94,60 @@
       font-size: 14px;
     }
 
-    .pdf-list {
-      display: grid;
-      gap: 10px;
-    }
+    /* Explorador tipo Obsidian: todas las asignaturas en un árbol compacto */
+    .tree-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    .tree-head .tree-actions { display: flex; gap: 2px; }
+    .tree-head button { width: 26px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 15px; cursor: pointer; }
+    .tree-head button:hover { background: #eef2f7; color: var(--text); }
 
-    .folder-node {
-      display: grid;
-      gap: 8px;
-    }
+    .pdf-list { display: block; font-size: 13.5px; }
 
     .folder-toggle {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      width: 100%;
-      padding: 9px 10px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #fff;
-      color: var(--text);
-      font-size: 14px;
-      font-weight: 700;
-      text-align: left;
-      cursor: pointer;
+      display: flex; align-items: center; gap: 6px; width: 100%;
+      padding: 4px 6px; border: 0; border-radius: 6px; background: transparent;
+      color: var(--text); font: inherit; font-weight: 600; text-align: left; cursor: pointer;
     }
-
-    .folder-toggle:hover {
-      border-color: var(--accent);
-    }
+    .folder-toggle:hover { background: #eef2f7; }
+    .pdf-list > .folder-node > .folder-toggle { font-weight: 800; }
 
     .folder-arrow {
-      flex-shrink: 0;
-      width: 0;
-      height: 0;
-      border-top: 5px solid transparent;
-      border-bottom: 5px solid transparent;
-      border-left: 7px solid var(--muted);
-      transition: transform .15s ease;
+      flex-shrink: 0; width: 0; height: 0;
+      border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 6px solid var(--muted);
+      transition: transform .12s ease;
     }
+    .folder-node:not(.collapsed) > .folder-toggle .folder-arrow { transform: rotate(90deg); }
+    .folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .folder-count { flex-shrink: 0; color: var(--muted); font-size: 11px; font-weight: 600; }
 
-    .folder-node:not(.collapsed) > .folder-toggle .folder-arrow {
-      transform: rotate(90deg);
-    }
+    .folder-children { margin-left: 9px; padding-left: 8px; border-left: 1px solid var(--border); }
+    .folder-node.collapsed > .folder-children { display: none; }
+    .pdf-list.searching .folder-node.collapsed > .folder-children { display: block; }
 
-    .folder-name {
-      flex: 1;
-      min-width: 0;
-      overflow-wrap: anywhere;
-    }
-
-    .folder-count {
-      flex-shrink: 0;
-      min-width: 28px;
-      height: 22px;
-      padding: 0 8px;
-      border-radius: 999px;
-      background: #eef2f7;
-      color: #344054;
-      font-size: 12px;
-      font-weight: 700;
-      line-height: 22px;
-      text-align: center;
-    }
-
-    .folder-children {
-      display: grid;
-      gap: 8px;
-      margin-top: 2px;
-      padding-left: 16px;
-      border-left: 1px solid var(--border);
-    }
-
-    .folder-node.collapsed > .folder-children {
-      display: none;
-    }
-
-    .pdf-list.searching .folder-node.collapsed > .folder-children {
-      display: grid;
-    }
-
-    .pdf-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #fff;
-      transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
-    }
-
-    .pdf-item:hover,
-    .pdf-item.active {
-      border-color: var(--accent);
-      background: var(--accent-soft);
-      box-shadow: 0 0 0 1px var(--accent);
-    }
+    .pdf-item { position: relative; display: flex; align-items: center; gap: 4px; border-radius: 6px; }
+    .pdf-item:hover { background: #eef2f7; }
+    .pdf-item.active { background: var(--accent-soft); }
+    .pdf-item.active .pdf-name { color: var(--accent); }
 
     .pdf-open {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      color: inherit;
-      text-decoration: none;
+      flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
+      padding: 4px 6px; color: inherit; text-decoration: none; cursor: pointer;
     }
+    .file-icon { flex-shrink: 0; width: 16px; text-align: center; font-size: 10px; font-weight: 800; color: var(--muted); }
+    .file-icon.pdf { color: #d92d20; }
+    .file-icon.md { color: #7a5af8; }
+    .file-icon.tex { color: #039855; }
+    .pdf-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pdf-file { flex-shrink: 0; color: var(--muted); font-size: 11px; }
 
-    .pdf-name {
-      font-size: 14px;
-      font-weight: 700;
-      line-height: 1.3;
-      overflow-wrap: anywhere;
+    .item-actions { display: none; flex-shrink: 0; gap: 2px; padding-right: 4px; }
+    .pdf-item:hover .item-actions { display: flex; }
+    .item-actions button {
+      width: 24px; height: 22px; border: 0; border-radius: 5px; background: transparent;
+      color: var(--muted); font-size: 12px; cursor: pointer;
     }
+    .item-actions button:hover { background: #dfe5ee; color: var(--accent); }
 
-    .pdf-file {
-      color: var(--muted);
-      font-size: 12px;
-      overflow-wrap: anywhere;
-    }
-
-    .rename-btn,
-    .extract-btn,
-    .preview-btn {
-      flex-shrink: 0;
-      width: 36px;
-      height: 36px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #fff;
-      color: var(--muted);
-      font-size: 16px;
-      cursor: pointer;
-    }
-
-    .rename-btn:hover,
-    .extract-btn:hover,
-    .preview-btn:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .rename-input { flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 2px solid var(--accent); border-radius: 8px; font-size: 14px; }
+    .rename-input { flex: 1; min-width: 0; height: 26px; margin: 1px 0; padding: 0 6px; border: 1px solid var(--accent); border-radius: 5px; font: inherit; outline: none; }
 
     .empty {
       display: none;
@@ -346,20 +257,23 @@
 <body>
   <div class="app">
     <aside>
-      <h1>PDFs disponibles</h1>
-      <p class="subtitle">Selecciona un documento para verlo en su portada.</p>
+      <h1>Apuntes</h1>
+      <p class="subtitle">Todas tus asignaturas y su temario.</p>
       <p class="mode-notice" id="modeNotice" hidden></p>
       <div class="source-row">
         <span id="rootPath" title="Carpeta fuente">Sin carpeta</span>
         <button type="button" id="pickRoot">Elegir carpeta…</button>
       </div>
-      <div class="subject-row">
-        <select id="subject" title="Elegir asignatura"></select>
-        <button type="button" id="subjectNew" title="Nueva asignatura">+</button>
+      <input class="search" id="search" type="search" placeholder="Buscar en todas las asignaturas...">
+      <div class="tree-head">
+        <span>Asignaturas</span>
+        <span class="tree-actions">
+          <button type="button" id="subjectNew" title="Nueva asignatura">+</button>
+          <button type="button" id="collapseAll" title="Plegar / desplegar todo">⇅</button>
+        </span>
       </div>
-      <input class="search" id="search" type="search" placeholder="Buscar PDF o carpeta...">
       <div class="pdf-list" id="pdfList"></div>
-      <p class="empty" id="empty">No se encontraron PDF con ese filtro.</p>
+      <p class="empty" id="empty">No hay archivos con ese filtro.</p>
     </aside>
 
     <main>
@@ -387,7 +301,6 @@
     const pdfList = document.getElementById('pdfList');
     const viewer = document.querySelector('iframe[name="pdfViewer"]');
 
-    const subjectSel = document.getElementById('subject');
     async function postJson(url, body) {
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
       const text = await res.text();
@@ -409,18 +322,11 @@
       loadFiles();
     });
 
-    function fillSubjects(pick) {
-      let saved = null;
-      try { saved = localStorage.getItem('subject'); } catch (e) {}
-      const want = pick || subjectSel.value || saved;
-      subjectSel.innerHTML = subjects.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-      subjectSel.value = subjects.includes(want) ? want : (subjects[0] || '');
-    }
+    let folders = [];
 
-    subjectSel.addEventListener('change', () => {
-      try { localStorage.setItem('subject', subjectSel.value); } catch (e) {}
-      render();
-    });
+    function saveCollapsed() {
+      try { localStorage.setItem('collapsed', JSON.stringify([...collapsedFolders])); } catch (e) {}
+    }
 
     document.getElementById('subjectNew').addEventListener('click', async () => {
       if (!apiEnabled) return uiAlert('Ejecuta iniciar.bat para crear asignaturas.');
@@ -428,16 +334,24 @@
       if (!name) return;
       const r = await postJson('/api/subject-new', { name });
       if (!r.ok) return uiAlert(r.error);
-      subjects.push(r.name);
-      subjects.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-      fillSubjects(r.name);
-      subjectSel.dispatchEvent(new Event('change'));
+      await loadFiles();
+    });
+
+    document.getElementById('collapseAll').addEventListener('click', () => {
+      const all = [...pdfList.querySelectorAll('.folder-node')].map((n) => n.dataset.path);
+      const anyOpen = all.some((p) => !collapsedFolders.has(p));
+      collapsedFolders.clear();
+      if (anyOpen) all.forEach((p) => collapsedFolders.add(p));
+      saveCollapsed();
+      render();
     });
 
     let files = [];
     let apiEnabled = false;
     let currentPath = null;
-    const collapsedFolders = new Set();
+    const collapsedFolders = new Set((() => {
+      try { return JSON.parse(localStorage.getItem('collapsed') || '[]'); } catch (e) { return []; }
+    })());
 
     function pdfUrl(path) {
       return '/files/' + path.split('/').map(encodeURIComponent).join('/') + '#page=1';
@@ -492,8 +406,17 @@
       return total;
     }
 
-    function buildTree(list) {
+    function buildTree(list, folderList = []) {
       const root = { name: '', path: '', folders: new Map(), files: [] };
+      folderList.slice().sort((x, y) => compareFiles({ folder: x, name: '' }, { folder: y, name: '' })).forEach((folder) => {
+        let node = root;
+        folder.split('/').filter(Boolean).forEach((part) => {
+          if (!node.folders.has(part)) {
+            node.folders.set(part, { name: part, path: node.path ? node.path + '/' + part : part, folders: new Map(), files: [] });
+          }
+          node = node.folders.get(part);
+        });
+      });
       list.slice().sort(compareFiles).forEach((file) => {
         const parts = (file.folder || '').split('/').filter(Boolean);
         let node = root;
@@ -527,7 +450,9 @@
         return;
       }
       const link = item.querySelector('a');
+      const actions = item.querySelector('.item-actions');
       if (!link || item.querySelector('.rename-input')) return;
+      if (actions) actions.style.visibility = 'hidden';
 
       const input = document.createElement('input');
       input.className = 'rename-input';
@@ -538,7 +463,7 @@
       input.setSelectionRange(0, file.name.replace(/\.pdf$/i, '').length);
 
       let finished = false;
-      const close = () => { finished = true; input.remove(); link.style.display = ''; };
+      const close = () => { finished = true; input.remove(); link.style.display = ''; if (actions) actions.style.visibility = ''; };
 
       const commit = async () => {
         if (finished) return;
@@ -559,6 +484,7 @@
         } catch (error) {
           input.remove();
           link.style.display = '';
+          if (actions) actions.style.visibility = '';
           uiAlert(error.message, 'Error al renombrar');
         }
       };
@@ -611,62 +537,56 @@
       openNew.href = url;
     }
 
+    function actionButton(label, title, onClick) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.title = title;
+      button.setAttribute('aria-label', title);
+      button.textContent = label;
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+      });
+      return button;
+    }
+
     function createItem(file) {
+      const kind = file.kind || 'pdf';
       const item = document.createElement('article');
       item.className = 'pdf-item' + (file.path === currentPath ? ' active' : '');
       item.dataset.search = [file.name, prettyName(file.name), file.folder].join(' ').toLowerCase();
+      item.title = file.path;
 
       const link = document.createElement('a');
       link.className = 'pdf-open';
-      link.href = pdfUrl(file.path);
-      link.target = 'pdfViewer';
-      const pagesText = file.pages ? ' · ' + pageLabel(file.pages) : '';
+      const pagesText = file.pages ? file.pages + ' p.' : '';
       link.innerHTML = `
-        <span class="pdf-name">${escapeHtml(prettyName(file.name))}</span>
-        <span class="pdf-file">${escapeHtml(file.name)}${pagesText}</span>
+        <span class="file-icon ${kind}">${kind.toUpperCase()}</span>
+        <span class="pdf-name">${escapeHtml(prettyName(file.name).replace(/\.(md|tex)$/i, ''))}</span>
+        <span class="pdf-file">${pagesText}</span>
       `;
-      link.addEventListener('click', () => setActive(item, file));
 
-      const renameButton = document.createElement('button');
-      renameButton.className = 'rename-btn';
-      renameButton.type = 'button';
-      renameButton.title = 'Renombrar archivo';
-      renameButton.setAttribute('aria-label', 'Renombrar ' + file.name);
-      renameButton.textContent = '✎';
-      renameButton.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        renameFile(file, item);
-      });
+      const actions = document.createElement('span');
+      actions.className = 'item-actions';
 
-      const extractButton = document.createElement('button');
-      extractButton.className = 'extract-btn';
-      extractButton.type = 'button';
-      extractButton.title = 'Extraer texto e imágenes a carpeta';
-      extractButton.setAttribute('aria-label', 'Extraer ' + file.name);
-      extractButton.textContent = '⇩';
-      extractButton.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        extractFile(file);
-      });
-
-      const previewButton = document.createElement('button');
-      previewButton.className = 'preview-btn';
-      previewButton.type = 'button';
-      previewButton.title = 'Ver texto e imágenes';
-      previewButton.setAttribute('aria-label', 'Ver extracción de ' + file.name);
-      previewButton.textContent = 'Ver';
-      previewButton.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        previewFile(file, item);
-      });
+      if (kind === 'pdf') {
+        link.href = pdfUrl(file.path);
+        link.target = 'pdfViewer';
+        link.addEventListener('click', () => setActive(item, file));
+        actions.appendChild(actionButton('✎', 'Renombrar', () => renameFile(file, item)));
+        actions.appendChild(actionButton('⇩', 'Extraer texto e imágenes a carpeta', () => extractFile(file)));
+        actions.appendChild(actionButton('👁', 'Ver texto e imágenes', () => previewFile(file, item)));
+      } else {
+        link.href = '#';
+        link.addEventListener('click', (event) => {
+          event.preventDefault();
+          if (window.openLabFile) window.openLabFile(file.path);
+        });
+      }
 
       item.appendChild(link);
-      item.appendChild(renameButton);
-      item.appendChild(extractButton);
-      item.appendChild(previewButton);
+      item.appendChild(actions);
       return item;
     }
 
@@ -687,6 +607,7 @@
         const key = section.dataset.path;
         if (collapsedFolders.has(key)) collapsedFolders.delete(key);
         else collapsedFolders.add(key);
+        saveCollapsed();
         section.classList.toggle('collapsed');
       });
 
@@ -713,10 +634,7 @@
         empty.style.display = 'none';
         return;
       }
-      const inSubject = files
-        .filter((f) => (f.folder || '').split('/')[0] === subjectSel.value)
-        .map((f) => ({ ...f, folder: f.folder.split('/').slice(1).join('/') }));
-      renderNode(buildTree(inSubject), pdfList);
+      renderNode(buildTree(files, folders), pdfList);
       applyFilter();
     }
 
@@ -732,11 +650,11 @@
 
       document.querySelectorAll('.folder-node').forEach((node) => {
         const hasVisible = Array.from(node.querySelectorAll('.pdf-item')).some((item) => item.style.display !== 'none');
-        node.style.display = hasVisible ? '' : 'none';
+        node.style.display = !query || hasVisible || node.dataset.path.includes(query) ? '' : 'none';
       });
 
       pdfList.classList.toggle('searching', Boolean(query));
-      empty.style.display = visible === 0 ? 'block' : 'none';
+      empty.style.display = query && visible === 0 ? 'block' : 'none';
     }
 
     async function loadFiles() {
@@ -746,6 +664,7 @@
         const data = await response.json();
         files = data.files || [];
         subjects = data.subjects || [];
+        folders = data.folders || data.subjects || [];
         configured = data.configured !== false;
         rootPath.textContent = data.root || 'Sin carpeta';
         rootPath.title = data.root || '';
@@ -759,7 +678,6 @@
         modeNotice.hidden = false;
         modeNotice.textContent = 'Modo solo lectura: ejecuta iniciar.bat y entra por http://localhost:8000 para renombrar o extraer archivos.';
       }
-      fillSubjects();
       render();
     }
 
@@ -784,6 +702,18 @@
       } catch (e) { /* servidor no disponible */ }
     }
     setInterval(watchFolder, 2000);
+
+    // Aviso si el servidor en marcha es más antiguo que el código en disco
+    (async () => {
+      try {
+        const res = await fetch('/api/version', { cache: 'no-store' });
+        const v = res.ok ? await res.json() : null;
+        if (!v || v.started !== v.current) {
+          modeNotice.hidden = false;
+          modeNotice.textContent = 'El servidor en marcha es una versión antigua. Cierra la ventana de iniciar.bat, vuelve a ejecutarlo y recarga con Ctrl+F5.';
+        }
+      } catch (e) { /* sin servidor: ya lo indica el modo solo lectura */ }
+    })();
     document.addEventListener('visibilitychange', watchFolder);
   </script>
   <script src="ui.js"></script>

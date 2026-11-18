@@ -106,7 +106,7 @@
   });
 
   $('labNew').onclick = async () => {
-    const name = await uiPrompt('Nuevo archivo .tex', ((document.getElementById('subject') || {}).value || 'Asignatura') + '/nuevo.tex', 'Ruta dentro de tu carpeta fuente, p. ej. Redes/apuntes.tex');
+    const name = await uiPrompt('Nuevo archivo .tex', ((cur || (typeof currentPath !== 'undefined' && currentPath) || 'Asignatura').split('/')[0]) + '/nuevo.tex', 'Ruta dentro de tu carpeta fuente, p. ej. Redes/apuntes.tex');
     if (!name) return;
     const d = await api('/api/tex-new', { path: name });
     if (!d.ok) return say(d.error, true);
@@ -136,6 +136,7 @@
   };
 
   window.openLab = async () => { lab.classList.add('open'); await refreshList(cur); showPane(); };
+  window.openLabFile = async (path) => { lab.classList.add('open'); await open(path); };
   window.addEventListener('beforeunload', (e) => { if (dirty) e.preventDefault(); });
 
   const btn = document.createElement('button');

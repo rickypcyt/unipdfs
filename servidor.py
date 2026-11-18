@@ -33,6 +33,14 @@ def source_root():
     return r
 
 PORT = 8000
+
+
+def code_version():
+    """Marca de la versión del código en disco (para avisar si el servidor está desactualizado)."""
+    return max(int((ROOT / name).stat().st_mtime) for name in ("servidor.py", "latex_api.py", "config.py"))
+
+
+STARTED_CODE = code_version()
 INVALID_NAME_CHARS = re.compile(r'[\\/:*?"<>|]')
 PAGE_CACHE = {}
 
@@ -51,6 +59,12 @@ def get_page_count(pdf_path):
     if PdfReader is not None:
         try:
             pages = len(PdfReader(str(pdf_path)).pages)
+        except Exception:
+            pages = None
+    if pages is None and pymupdf is not None:
+        try:
+            with pymupdf.open(str(pdf_path)) as doc:
+                pages = doc.page_count
         except Exception:
             pages = None
 
@@ -224,6 +238,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/api/version":
+            self._json({"started": STARTED_CODE, "current": code_version()})
+            return
+
         if path == "/api/signature":
             base = config.root()
             sig = []
@@ -247,22 +265,31 @@ class Handler(SimpleHTTPRequestHandler):
             if base is None:
                 self._json({"configured": False, "root": "", "files": [], "subjects": []})
                 return
-            files = []
-            for pdf in base.rglob("*.pdf"):
-                if not pdf.is_file():
+            files, folders = [], []
+            for item in base.rglob("*"):
+                rel = item.relative_to(base)
+                if any(part.startswith((".", "_")) or part.endswith("_extraido") for part in rel.parts):
                     continue
-                stat = pdf.stat()
+                if item.is_dir():
+                    folders.append(rel.as_posix())
+                    continue
+                kind = item.suffix.lower().lstrip(".")
+                if kind not in ("pdf", "md", "tex"):
+                    continue
+                stat = item.stat()
                 files.append({
-                    "path": pdf.relative_to(source_root()).as_posix(),
-                    "name": pdf.name,
-                    "folder": pdf.parent.relative_to(base).as_posix() if pdf.parent != base else "",
+                    "path": rel.as_posix(),
+                    "name": item.name,
+                    "kind": kind,
+                    "folder": rel.parent.as_posix() if rel.parent != Path(".") else "",
                     "size": stat.st_size,
                     "modified": int(stat.st_mtime),
-                    "pages": get_page_count(pdf),
+                    "pages": get_page_count(item) if kind == "pdf" else None,
                 })
             files.sort(key=lambda item: (item["folder"].lower(), item["name"].lower()))
-            subjects = sorted((d.name for d in base.iterdir() if d.is_dir() and not d.name.startswith((".", "_"))), key=str.lower)
-            self._json({"configured": True, "root": str(base), "files": files, "subjects": subjects})
+            subjects = sorted((f for f in folders if "/" not in f), key=str.lower)
+            self._json({"configured": True, "root": str(base), "files": files,
+                        "folders": folders, "subjects": subjects})
             return
 
         if path == "/api/extract":
