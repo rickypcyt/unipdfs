@@ -1,4 +1,4 @@
-#lab{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;background:#e9edf2;font-family:Inter,Segoe UI,Arial,sans-serif;color:#17202a}
+#lab{position:absolute;inset:0;z-index:5;display:none;flex-direction:column;background:#e9edf2;font-family:Inter,Segoe UI,Arial,sans-serif;color:#17202a}
 #lab.open{display:flex}
 #lab .lab-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:#fff;border-bottom:1px solid #d9dee7}
 #lab button,#lab select,#lab input{font:inherit;font-size:13px;padding:6px 10px;border:1px solid #d9dee7;border-radius:7px;background:#fff;color:inherit}

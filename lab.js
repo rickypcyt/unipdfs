@@ -19,7 +19,7 @@
       <div class="pane"><textarea id="labEditor" spellcheck="false" placeholder="Crea o abre un .tex / .md"></textarea><pre id="labLog"></pre></div>
       <div class="pane"><iframe id="labPreview" title="Vista previa"></iframe><div id="labMd"></div></div>
     </div>`;
-  document.body.appendChild(lab);
+  (document.querySelector("main") || document.body).appendChild(lab);
 
   const ed = $('labEditor'), status = $('labStatus'), logEl = $('labLog');
   let cur = null, lastPdf = null, dirty = false;
