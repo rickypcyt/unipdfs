@@ -215,7 +215,17 @@ def _inline(t):
         if part.startswith("`") and part.endswith("`") and len(part) > 1:
             res.append(r"\texttt{" + _esc(part[1:-1]) + "}")
             continue
+        urls = []
+
+        def grab(m):
+            url = m.group(0).rstrip(".,;:)")
+            urls.append(url)
+            return "\x01%d\x02" % (len(urls) - 1) + m.group(0)[len(url):]
+
+        part = re.sub(r"https?://[^\s<>\"“”]+", grab, part)
         s = _esc(part)
+        s = re.sub(r"[“\"]\s*([^“”\"]{1,120}?)\s*[”\"]", r"\\enquote{\1}", s)
+        s = re.sub(r"\x01(\d+)\x02", lambda mm: "\\url{" + urls[int(mm.group(1))] + "}", s)
         s = re.sub(r"\*\*\*(.+?)\*\*\*", r"\\textbf{\\emph{\1}}", s)
         s = re.sub(r"\*\*(.+?)\*\*", r"\\textbf{\1}", s)
         s = re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"\\emph{\1}", s)
@@ -240,12 +250,13 @@ PRO_PREAMBLE = r"""\documentclass[11pt,a4paper]{article}
 \fi
 \usepackage[spanish,es-noshorthands,es-tabla]{babel}
 \usepackage{microtype}
+\emergencystretch=1.5em
 \usepackage[spanish=spanish]{csquotes}
 
 % ---------------------------------------------------------------
 %  Página
 % ---------------------------------------------------------------
-\usepackage[margin=2.2cm,marginparwidth=1.6cm,marginparsep=3mm]{geometry}
+\usepackage[margin=2.4cm,marginparwidth=1.9cm,marginparsep=3mm]{geometry}
 \usepackage{parskip}
 \usepackage{fancyhdr}
 \setlength{\headheight}{14pt}
@@ -272,6 +283,13 @@ PRO_PREAMBLE = r"""\documentclass[11pt,a4paper]{article}
 \hypersetup{colorlinks=true,linkcolor=NavyBlue,urlcolor=NavyBlue}
 \urlstyle{tt}
 \sloppy
+
+\usepackage{tocloft}
+\setlength{\cftsecnumwidth}{2.4em}
+\setlength{\cftsubsecindent}{2.4em}
+\setlength{\cftsubsecnumwidth}{3.2em}
+\setlength{\cftsubsubsecindent}{5.6em}
+\setlength{\cftsubsubsecnumwidth}{4em}
 
 \graphicspath{{imagenes/}}
 
@@ -341,6 +359,9 @@ PRO_PREAMBLE = r"""\documentclass[11pt,a4paper]{article}
 \title{\textbf{%%TITLE%%}}
 \author{}
 \date{}
+
+% Numeración acorde con el temario (si los títulos de las diapositivas la traen)
+%%NUMBERING%%
 
 \begin{document}
 \maketitle
@@ -416,6 +437,154 @@ def _find_dividers(lines):
     return dividers
 
 
+_SERIES = re.compile(r"\s*\((?:[IVX]{1,6}|\d{1,2})\)\s*$|\s*\(continuaci[oó]n\)\s*$", re.I)
+_INDEX_TITLE = re.compile(r"(?i)^(contenidos?|índice|indice|agenda|esquema)\b")
+_SINTEXTO = re.compile(r"^\*\(diapositiva sin texto\)\*$")
+_NUMBERED_HEAD = re.compile(r"^(\d+(?:\.\d+)+)\.?\s+(\S.*)$")
+_INDEX_LINE = re.compile(r"^\s*(?:[-*]\s+)?\d+\.\d+")
+_BOLD_LINE = re.compile(r"^\*\*([^*]+)\*\*\s*$")
+
+
+def _page_numbers(body):
+    nums = []
+    for ln in body:
+        m = _PAGE.match(ln)
+        if m:
+            nums += [int(x) for x in re.findall(r"\d+", m.group(1))]
+    return nums
+
+
+def _fmt_pages(nums):
+    groups = []
+    for n in sorted(set(nums)):
+        if groups and n == groups[-1][-1] + 1:
+            groups[-1].append(n)
+        else:
+            groups.append([n])
+    return ", ".join(f"{g[0]}--{g[-1]}" if len(g) > 1 else str(g[0]) for g in groups)
+
+
+def _split_slides(lines):
+    """Separa el Markdown en bloques: cada `## título` abre una diapositiva (lo anterior es el bloque sin título)."""
+    blocks, cur, in_fence = [{"head": None, "body": []}], None, False
+    cur = blocks[0]
+    for ln in lines:
+        if ln.strip().startswith("```"):
+            in_fence = not in_fence
+        if not in_fence and ln.startswith("## "):
+            cur = {"head": ln[3:].strip(), "body": []}
+            blocks.append(cur)
+        else:
+            cur["body"].append(ln)
+    return blocks
+
+
+def _prepare_slides(lines):
+    """Limpia la estructura antes de convertir: quita diapositivas vacías e índices y une las series (I), (II)…"""
+    kept = []
+    for b in _split_slides(lines):
+        b["body"] = [ln for ln in b["body"] if not _SINTEXTO.match(ln.strip())]
+        head = b["head"]
+        if head is not None:
+            content = [ln for ln in b["body"] if ln.strip() and not _PAGE.match(ln) and not ln.strip().startswith("<!--")]
+            index_like = sum(1 for ln in content if _INDEX_LINE.match(ln))
+            # Índice: ya existe \tableofcontents
+            if _INDEX_TITLE.match(head) or (len(content) >= 3 and index_like >= 0.7 * len(content)):
+                continue
+        kept.append(b)
+
+    merged = []
+    for b in kept:
+        head = b["head"]
+        b["raw"] = head or ""
+        b["base"] = _SERIES.sub("", head).strip() if head else None
+        b["pages"] = _page_numbers(b["body"])
+        b["members"] = 1
+        prev = merged[-1] if merged else None
+        if (prev and head is not None and prev["head"] is not None and b["base"]
+                and b["base"].lower() == prev["base"].lower()
+                and (_SERIES.search(head) or head.lower() == prev["raw"].lower())):
+            prev["pages"] += b["pages"]
+            prev["body"] += b["body"]
+            prev["members"] += 1
+            continue
+        merged.append(b)
+
+    out = []
+    for b in merged:
+        if b["head"] is None:
+            out += b["body"]
+            continue
+        out.append("## " + (b["base"] if b["members"] > 1 else b["raw"]))
+        if b["pages"]:
+            out.append(f"<sub>p. {_fmt_pages(b['pages'])}</sub>")
+        out += [ln for ln in b["body"] if not _PAGE.match(ln)]
+    return out
+
+
+def _plan_headings(lines, dividers):
+    """Para cada `## título`: qué comando LaTeX le toca y con qué texto (quita numeraciones propias como «1.5.1.»)."""
+    heads, in_fence = [], False
+    for i, ln in enumerate(lines):
+        if ln.strip().startswith("```"):
+            in_fence = not in_fence
+        elif not in_fence and ln.startswith("## "):
+            heads.append((i, ln[3:].strip()))
+    cmds = ["section", "subsection", "subsubsection"]
+    plan, numbering = {}, None
+    numbered = [(i, _NUMBERED_HEAD.match(t)) for i, t in heads if _NUMBERED_HEAD.match(t)]
+    if len(numbered) >= 3 and len(numbered) >= 0.25 * len(heads):
+        const_prefix = len({m.group(1).split(".")[0] for _, m in numbered}) == 1
+        last, last_section = None, None
+        for i, text in heads:
+            m = _NUMBERED_HEAD.match(text)
+            if m:
+                depth = len(m.group(1).split("."))
+                level = max(0, min(depth - (2 if const_prefix else 1), 2))
+                if level == 0:
+                    if m.group(1) == last_section:      # el PDF repite «1.5. Servidores DNS» antes de cada subapartado
+                        plan[i] = ("skip", m.group(2))
+                        continue
+                    last_section = m.group(1)
+                text, last = m.group(2), level
+            elif re.fullmatch(r"\d+(?:\.\d+)*\.?", text.strip()):
+                plan[i] = ("skip", text)                # un título que es solo un número no dice nada
+                continue
+            else:
+                level = 0 if last is None else min(last + 1, 2)
+                if last is None and const_prefix:
+                    plan[i] = ("section*", text)        # antes del primer apartado numerado: secciones sin número
+                    continue
+            plan[i] = (cmds[level], text)
+        if const_prefix:
+            first = next((m for _, m in numbered if len(m.group(1).split(".")) == 2), numbered[0][1])
+            parts = first.group(1).split(".")
+            numbering = (parts[0], int(parts[1]) if len(parts) > 1 else 1)
+        return plan, numbering, "numbered"
+    hier = len(dividers) >= 2
+    seen_first = False
+    for i, text in heads:
+        if i in dividers:
+            plan[i] = ("section", dividers[i][1])
+        elif not hier or not seen_first:
+            plan[i] = ("section", text)
+        else:
+            plan[i] = ("subsection", text)
+        seen_first = True
+    return plan, None, "hier" if hier else "flat"
+
+
+def _grid(names):
+    """Varias imágenes de una diapositiva: cuadrícula de 3 por fila."""
+    out = [r"\begin{center}"]
+    for k, name in enumerate(names):
+        last = k == len(names) - 1
+        end = "" if last else (r"\\[6pt]" if k % 3 == 2 else r"\hfill")
+        out.append(r"\includegraphics[width=0.31\linewidth,height=0.22\textheight,keepaspectratio]{%s}%s" % (name, end))
+    out.append(r"\end{center}")
+    return out
+
+
 def markdown_to_latex(md, base_dir=None):
     """Markdown -> documento LaTeX con el estilo de apuntes. `base_dir` sirve para comprobar que las imágenes existen."""
     lines = md.splitlines()
@@ -426,13 +595,15 @@ def markdown_to_latex(md, base_dir=None):
         title = m.group(2).strip()
         lines.remove(first)
 
+    lines = _prepare_slides(lines)
     dividers = _find_dividers(lines)
-    hier = len(dividers) >= 2          # con varios separadores: separador = \section, diapositiva = \subsection
-    skip = {j for j, _ in dividers.values()}
+    plan, numbering, mode = _plan_headings(lines, dividers)
+    skip = {j for j, _ in dividers.values()} if mode == "hier" else set()
     sections = ["section", "subsection", "subsubsection", "paragraph", "subparagraph", "subparagraph"]
+    child_offset = 1 if mode in ("hier", "numbered") else 0
 
     out, stack, i = [], [], 0          # stack: [(entorno, sangría)]
-    have_section, box_open, pending_box = False, False, None
+    box_open, pending_box, counter_set = False, None, False
 
     def close_lists(indent=-1):
         while stack and stack[-1][1] > indent:
@@ -445,20 +616,24 @@ def markdown_to_latex(md, base_dir=None):
             box_open = False
 
     def heading(level, text, idx):
-        nonlocal have_section
+        nonlocal counter_set
         close_lists()
         close_box()
-        if idx in dividers:
-            cmd, text = "section", dividers[idx][1]
+        if idx in plan:
+            cmd, text = plan[idx]
+            if cmd == "skip":
+                return
         elif level == 1:
             cmd = "section"
         else:
-            cmd = sections[min((level - 2) + (1 if hier else 0), 5)]
-        if hier and cmd != "section" and not have_section:
-            out.extend(["", r"\section{Presentación}"])
-            have_section = True
-        if cmd == "section":
-            have_section = True
+            cmd = sections[min((level - 2) + child_offset, 5)]
+        if cmd == "section" and numbering and not counter_set:
+            out.append(r"\setcounter{section}{%d}" % (numbering[1] - 1))
+            counter_set = True
+        if cmd == "section*":
+            title_tex = _inline(text.strip())
+            out.extend(["", r"\section*{%s}" % title_tex, r"\addcontentsline{toc}{section}{%s}" % title_tex])
+            return
         out.extend(["", r"\%s{%s}" % (cmd, _inline(text.strip()))])
 
     while i < len(lines):
@@ -478,7 +653,7 @@ def markdown_to_latex(md, base_dir=None):
             out += [r"\begin{lstlisting}" + (f"[language={lang}]" if lang else ""), body, r"\end{lstlisting}"]
         elif re.match(r"^\s*<!--.*-->\s*$", ln):
             close_lists()
-            out.append("%" + ln.strip()[4:-3])
+            out.append("%" + ln.strip()[4:-3].replace("\n", " "))
         elif (m := _PAGE.match(ln)):
             close_lists()
             num = re.sub(r"^p\.\s*", "", m.group(1)).replace("-", "--").replace("–", "--")
@@ -490,18 +665,32 @@ def markdown_to_latex(md, base_dir=None):
                 pending_box = None
         elif (m := _IMG.match(ln)):
             close_lists()
+            # ¿Varias imágenes seguidas? (>=3 -> cuadrícula)
+            names, j = [], i
+            while j < len(lines):
+                mm = _IMG.match(lines[j])
+                if mm:
+                    names.append(mm.group(1))
+                elif lines[j].strip():
+                    break
+                j += 1
+            usable = [n for n in names if not n.startswith(("http:", "https:")) and " " not in n
+                      and (base_dir is None or (Path(base_dir) / n).exists())]
+            short = [n[len("imagenes/"):] if n.startswith("imagenes/") else n for n in usable]
+            if len(names) >= 3:
+                out += _grid(short) if short else []
+                i = j
+                continue
             src = m.group(1)
-            ok = not src.startswith(("http:", "https:")) and " " not in src and (
-                base_dir is None or (Path(base_dir) / src).exists())
-            if ok:
+            if src in usable:
                 out.append(r"\figura{%s}{}" % (src[len("imagenes/"):] if src.startswith("imagenes/") else src))
             else:
                 out.append("% imagen no incluida: " + src)
         elif (m := _HEAD.match(ln)):
             level, text = len(m.group(1)), m.group(2)
             heading(level, text, i)
-            if re.match(r"(?i)^ejercicio", text.strip()):
-                pending_box = r"\begin{ejercicio}[%s]" % _inline(text.strip())
+            if re.match(r"(?i)^ejercicio", (plan.get(i) or (None, text))[1].strip()):
+                pending_box = r"\begin{ejercicio}[%s]" % _inline((plan.get(i) or (None, text))[1].strip())
         elif (m := _ITEM.match(ln)):
             indent = len(m.group(1).replace("\t", "    "))
             env = "enumerate" if m.group(2)[0].isdigit() else "itemize"
@@ -525,6 +714,9 @@ def markdown_to_latex(md, base_dir=None):
                 out.append(r"{\footnotesize\itshape\color{gray}" + _inline(m.group(1)) + r"}\par")
             else:
                 out += [r"\begin{nota}[Aviso]", _inline(m.group(1)), r"\end{nota}"]
+        elif (m := _BOLD_LINE.match(ln.strip())):
+            close_lists()
+            out.append(r"\paragraph{%s}" % _inline(m.group(1)))     # subtítulo dentro de la diapositiva
         else:
             close_lists()
             out.append(_inline(ln))
@@ -533,6 +725,8 @@ def markdown_to_latex(md, base_dir=None):
     close_box()
     body = re.sub(r"\n{3,}", "\n\n", "\n".join(out).strip())
 
-    pre = PRO_PREAMBLE.replace("%%HEADER%%", _esc((title or "Apuntes")[:70])) \
-                      .replace("%%TITLE%%", _inline(title) if title else "Apuntes")
+    numbering_tex = (r"\renewcommand{\thesection}{%s.\arabic{section}}" % numbering[0]) if numbering else ""
+    pre = (PRO_PREAMBLE.replace("%%HEADER%%", _esc((title or "Apuntes")[:70]))
+                       .replace("%%TITLE%%", _inline(title) if title else "Apuntes")
+                       .replace("%%NUMBERING%%", numbering_tex))
     return pre + "\n" + body + "\n\n\\end{document}\n"

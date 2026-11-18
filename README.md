@@ -56,3 +56,10 @@ se detectan solos; el código se reconoce por su fuente monoespaciada), cajas pa
 convertidas en secciones. Para aplicarlo a una extracción antigua: abre su LaTeX y en **Convertir** elige
 *Regenerar con el estilo de apuntes* (lo anterior se guarda en `anterior/`; los bloques de código solo aparecen si se
 rehace la extracción con ↻). Tablas, cajas de definición y redacción final siguen siendo trabajo manual.
+
+### Reglas de limpieza que aplica el generador
+Quita diapositivas vacías y de índice, une las series «Título (I)», «(II)»… en un único apartado con `\diapo{15--17}`,
+quita la numeración propia de los títulos («1.5.1.») y deja que LaTeX numere (con prefijo del tema y continuando la
+numeración del PDF), descarta números de pie de página, pasa las URL a `\url{}` y las comillas a `\enquote{}`, coloca
+3 o más imágenes de una diapositiva en cuadrícula, convierte los subtítulos en negrita en `\paragraph{}` y deja como
+comentario las etiquetas sueltas de los diagramas.

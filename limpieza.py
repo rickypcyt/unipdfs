@@ -50,10 +50,25 @@ def _is_mono(span):
     return any(k in span["font"].lower() for k in _MONO_NAMES) or bool(span["flags"] & 8)
 
 
+_BULLET_GLYPHS = set("Ø•▪■➢►✓✔§ü–—-◦○·")
+
+
+def _is_bullet_span(span):
+    """Trozo que solo es un símbolo de viñeta (a veces en fuente Wingdings/Symbol)."""
+    t = span["text"].strip()
+    font = span["font"].lower()
+    return ("wingdings" in font or "symbol" in font) or (len(t) == 1 and t in _BULLET_GLYPHS)
+
+
+def _is_bold(span):
+    return bool(span["flags"] & 16) or "bold" in span["font"].lower()
+
+
 def _rows(page):
     """Filas visuales de la página: une las 'líneas' del PDF que están a la misma altura."""
     rows = []
     data = page.get_text("dict")
+    page_h = max(page.rect.height, 1)
     for bno, block in enumerate(data["blocks"]):
         if block.get("type") != 0:
             continue
@@ -67,8 +82,10 @@ def _rows(page):
             size = max(s["size"] for s in spans)
             bold = any(s["flags"] & 16 for s in spans)
             text = " ".join(s["text"] for s in spans)
-            raw = "".join(s["text"] for s in line["spans"]).rstrip()
-            mono = all(_is_mono(s) for s in spans)
+            mono = any(_is_mono(s) for s in spans) and all(_is_mono(s) or _is_bullet_span(s) for s in spans)
+            # En el código se descarta la viñeta que el PDF pone delante ("– Set-Cookie ...")
+            raw = "".join(s["text"] for s in line["spans"] if not (mono and _is_bullet_span(s))).rstrip()
+            bold_all = all(_is_bold(s) for s in spans)
             for row in block_rows:
                 if abs(row["yc"] - yc) < 0.55 * min(hgt, row["h"]):
                     row["parts"].append((x0, text))
@@ -77,10 +94,11 @@ def _rows(page):
                     row["size"] = max(row["size"], size)
                     row["bold"] = row["bold"] or bold
                     row["mono"] = row["mono"] and mono
+                    row["bold_all"] = row["bold_all"] and bold_all
                     break
             else:
                 block_rows.append({"yc": yc, "h": hgt, "x0": x0, "size": size, "bold": bold, "mono": mono,
-                                   "block": bno, "parts": [(x0, text)], "raws": [(x0, raw)]})
+                                   "bold_all": bold_all, "rel_y": yc / page_h, "block": bno, "parts": [(x0, text)], "raws": [(x0, raw)]})
         for row in sorted(block_rows, key=lambda r: r["yc"]):
             row["raw"] = " ".join(t for _, t in sorted(row["raws"])).strip("\n")
             row["text"] = _clean(" ".join(t for _, t in sorted(row["parts"])))
@@ -115,8 +133,10 @@ def analyze(doc):
     pages, seen = [], {}
     for index, rows in enumerate(raw):
         number = index + 1
+        # Se quitan pies repetidos y el número de diapositiva (un número suelto en la franja inferior)
         rows = [r for r in rows
-                if _norm(r["text"]) not in repeated and r["text"] != str(number)]
+                if _norm(r["text"]) not in repeated and r["text"] != str(number)
+                and not (re.fullmatch(r"\d{1,4}\.?", r["text"]) and r["rel_y"] > 0.85)]
         # Cualquier línea con signos raros dentro de las palabras indica fuente rota en esa página.
         garbled = [r for r in rows if weird_count(r["text"])]
         rows = [r for r in rows if r not in garbled]
@@ -130,6 +150,10 @@ def analyze(doc):
                 rows = [r for r in rows if r not in title_rows]
 
         items = _items(rows)
+        # Diapositiva con imagen y muchas cajitas de 1-3 palabras: son etiquetas del diagrama, no texto corrido
+        if (len(items) >= 6 and all(k in ("p", "h") for k, _, _ in items) and len(doc[index].get_images()) >= 1
+                and sorted(len(t.split()) for _, _, t in items)[len(items) // 2] <= 3):
+            items = [("labels", 0, " | ".join(t for _, _, t in items))]
         key = _norm(title + "|" + " ".join(t for _, _, t in items))
         # Solo se considera repetida si tiene texto propio (las de solo imagen suelen diferir).
         duplicate = seen.get(key) if items else None
@@ -162,13 +186,22 @@ def _items(rows):
             last_block, last_y, last_h = r["block"], r["yc"], r["h"]
             continue
 
+        # Línea corta toda en negrita = subtítulo (no se mezcla con el párrafo de debajo)
+        if (r["bold_all"] and not NUMBER_ONLY.match(text) and not NUMBERED.match(text)
+                and first not in BULLET1 and first not in BULLET2 and 1 <= len(text.split()) <= 10
+                and not text.endswith((".", ",", ";", ":"))):
+            items.append(["h", 0, text, r["x0"]])
+            pending_number = None
+            last_block, last_y, last_h = r["block"], r["yc"], r["h"]
+            continue
+
         new_block = r["block"] != last_block
         gap = (r["yc"] - last_y) if last_y is not None else None
         line_h = max(r["h"], last_h or 0)
         big_gap = gap is not None and gap > 1.9 * line_h
         # Una viñeta que sigue en la fila de justo debajo (aunque el PDF la meta en otro bloque).
         close_below = gap is not None and 0 < gap <= 1.6 * line_h
-        prev_open = bool(items) and items[-1][0] != "code" and (
+        prev_open = bool(items) and items[-1][0] not in ("code", "h") and (
             items[-1][0] in ("ul", "ol") or not items[-1][2].endswith((".", ":", "?", "!")))
 
         if NUMBER_ONLY.match(text):
@@ -184,7 +217,7 @@ def _items(rows):
             items.append(["ol", 1 if r["x0"] - base_x > 8 else 0, f"{m.group(1)}. {m.group(2)}"])
         elif (first in BULLET1 or first in BULLET2) and len(text) > 1 and text[1] == " ":
             items.append(["ul", 0 if first in BULLET1 else 1, text[2:].strip(), r["x0"]])
-        elif items and items[-1][0] != "code" and ((not new_block and not big_gap) or (close_below and prev_open)):
+        elif items and items[-1][0] not in ("code", "h") and ((not new_block and not big_gap) or (close_below and prev_open)):
             prev = items[-1]
             prev[2] = prev[2] + text if prev[2].endswith("-") else prev[2] + " " + text
         else:
@@ -217,11 +250,31 @@ def _items(rows):
     return [tuple(i[:3]) for i in items]
 
 
+_SMALL_WORDS = {"de", "la", "el", "en", "y", "a", "los", "las", "del", "con", "por", "para", "un", "una"}
+_DOC_WORDS = re.compile(r"(?i)^(tema|parte|unidad|bloque|práctica|practica|capítulo|capitulo|sesión|sesion)(\d+)?$")
+
+
 def pretty_title(stem):
-    """'2526_ATW_Tema3_Parte I' -> 'ATW Tema3 Parte I' (quita el prefijo de curso y los guiones bajos)."""
-    title = re.sub(r"[_]+", " ", stem)
-    title = re.sub(r"^\d{4}\s+", "", title)
-    return re.sub(r"\s{2,}", " ", title).strip()
+    """'2526_atw-tema1_PARTE II' -> 'ATW Tema 1 Parte II' (quita el prefijo de curso y separa tema/parte y números)."""
+    s = re.sub(r"^\d{4}[_\s-]+", "", stem)
+    out, prev = [], ""
+    for token in (t for t in re.split(r"[_\-\s]+", s) if t):
+        m = _DOC_WORDS.match(token)
+        if m:
+            out.append(m.group(1).capitalize())
+            if m.group(2):
+                out.append(m.group(2))
+        elif re.fullmatch(r"[IVXivx]{1,5}", token) and prev.lower() in ("parte", "tema", "unidad", "bloque"):
+            out.append(token.upper())
+        elif token.isalpha() and token.islower() and len(token) <= 3 and token not in _SMALL_WORDS:
+            out.append(token.upper())   # siglas (atw -> ATW)
+        elif token.isupper() and len(token) > 4:
+            out.append(token.capitalize())
+        else:
+            out.append(token)
+        prev = out[-1]
+    title = " ".join(out)
+    return title[:1].upper() + title[1:]
 
 
 # ---------- salidas ----------
@@ -254,6 +307,16 @@ def to_markdown(pages, title="", images=None):
                 if prev_kind in ("ul", "ol"):
                     out.append("")
                 out += ["```", text, "```", ""]
+                prev_kind = kind
+                continue
+            if kind == "h":
+                if prev_kind in ("ul", "ol"):
+                    out.append("")
+                out += ["**" + text.replace("*", "\\*") + "**", ""]
+                prev_kind = kind
+                continue
+            if kind == "labels":
+                out += ["<!-- etiquetas del diagrama: " + text.replace("--", "—") + " -->", ""]
                 prev_kind = kind
                 continue
             text = text.replace("*", "\\*")
@@ -289,6 +352,8 @@ def to_text(pages):
         for kind, level, text in p["items"]:
             if kind == "code":
                 out += ["    " + ln for ln in text.splitlines()]
+            elif kind == "labels":
+                out.append("  [etiquetas del diagrama: " + text + "]")
             elif kind == "ul":
                 out.append(("    ◦ " if level else "  • ") + text)
             elif kind == "ol":
