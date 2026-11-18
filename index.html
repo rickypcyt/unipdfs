@@ -386,6 +386,13 @@
     const viewer = document.querySelector('iframe[name="pdfViewer"]');
 
     const subjectSel = document.getElementById('subject');
+    async function postJson(url, body) {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      const text = await res.text();
+      try { return JSON.parse(text); }
+      catch (e) { return { ok: false, error: 'El servidor no reconoce ' + url + '. Cierra la ventana de iniciar.bat y vuelve a ejecutarlo (sigue abierta la versión antigua).' }; }
+    }
+
     const rootPath = document.getElementById('rootPath');
     let subjects = [];
     let configured = true;
@@ -394,7 +401,7 @@
       if (!apiEnabled) return alert('Ejecuta iniciar.bat y entra por http://localhost:8000');
       rootPath.textContent = 'Eligiendo carpeta…';
       try {
-        const r = await (await fetch('/api/pick-folder', { method: 'POST' })).json();
+        const r = await postJson('/api/pick-folder');
         if (!r.ok) alert(r.error);
       } catch (e) { alert(String(e)); }
       loadFiles();
@@ -417,7 +424,7 @@
       if (!apiEnabled) return alert('Ejecuta iniciar.bat para crear asignaturas.');
       const name = prompt('Nombre de la nueva asignatura:');
       if (!name) return;
-      const r = await (await fetch('/api/subject-new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })).json();
+      const r = await postJson('/api/subject-new', { name });
       if (!r.ok) return alert(r.error);
       subjects.push(r.name);
       subjects.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));

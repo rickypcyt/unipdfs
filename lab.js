@@ -27,7 +27,9 @@
   const say = (t, err) => { status.textContent = t; status.className = 'status' + (err ? ' err' : ''); };
   const api = async (url, body) => {
     const r = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' });
-    return r.json();
+    const t = await r.text();
+    try { return JSON.parse(t); }
+    catch (e) { return { ok: false, error: 'Servidor antiguo: cierra iniciar.bat y vuelve a ejecutarlo' }; }
   };
   const isMd = () => cur && cur.toLowerCase().endsWith('.md');
   const pdfSrc = (p, m) => '/files/' + p.split('/').map(encodeURIComponent).join('/') + '?v=' + (m || Date.now()) + '#view=FitH';
