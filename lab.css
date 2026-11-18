@@ -1,0 +1,20 @@
+#lab{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;background:#e9edf2;font-family:Inter,Segoe UI,Arial,sans-serif;color:#17202a}
+#lab.open{display:flex}
+#lab .lab-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:#fff;border-bottom:1px solid #d9dee7}
+#lab button,#lab select,#lab input{font:inherit;font-size:13px;padding:6px 10px;border:1px solid #d9dee7;border-radius:7px;background:#fff;color:inherit}
+#lab button{cursor:pointer;font-weight:600}
+#lab button:hover{border-color:#155eef}
+#lab button:disabled{opacity:.5;cursor:default}
+#lab button.primary{background:#155eef;border-color:#155eef;color:#fff}
+#lab .sep{width:1px;height:22px;background:#d9dee7}
+#lab .status{margin-left:auto;font-size:12px;color:#667085}
+#lab .status.err{color:#b42318}
+#lab .lab-body{flex:1;display:flex;min-height:0}
+#lab .pane{flex:1;min-width:0;display:flex;flex-direction:column}
+#lab .pane+.pane{border-left:1px solid #d9dee7}
+#labEditor{flex:1;width:100%;border:0;padding:14px;resize:none;outline:0;font:14px/1.5 Consolas,"Cascadia Mono",monospace;tab-size:2;background:#fff;color:#17202a;white-space:pre}
+#labPreview{flex:1;width:100%;border:0;background:#fff}
+#labMd{flex:1;overflow:auto;padding:24px 32px;background:#fff;line-height:1.6;display:none}
+#labMd img{max-width:100%}
+#labLog{display:none;max-height:30%;overflow:auto;margin:0;padding:10px 14px;background:#101828;color:#e4e7ec;font:12px/1.45 Consolas,monospace;white-space:pre-wrap;border-top:1px solid #d9dee7}
+@media(max-width:900px){#lab .lab-body{flex-direction:column}#lab .pane+.pane{border-left:0;border-top:1px solid #d9dee7}}

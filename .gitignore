@@ -1,0 +1,9 @@
+__pycache__/
+_herramientas/
+*_extraido/
+*.log
+*.aux
+*.xdv
+# Tus apuntes y PDFs son personales: no se suben
+University/*
+!University/README.md
