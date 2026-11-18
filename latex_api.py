@@ -98,6 +98,31 @@ def new_tex(rel):
     return p.relative_to(src()).as_posix()
 
 
+def published_path(tex):
+    """Dónde se publica el PDF de un texto.tex generado a partir de un PDF: en el tema, junto al original.
+    Ej.: Tema 3/Parte I_extraido/texto.tex  ->  Tema 3/Parte I VersionLatex.pdf  (None para otros .tex)."""
+    import config
+    folder = tex.parent
+    if tex.name != "texto.tex" or not folder.name.endswith("_extraido"):
+        return None
+    return folder.parent / (folder.name[:-len("_extraido")] + config.LATEX_SUFFIX + ".pdf")
+
+
+def publish_pdf(tex):
+    """Copia el PDF compilado al tema con su nombre definitivo (solo si cambió). Devuelve su ruta relativa."""
+    dest = published_path(tex)
+    pdf = tex.with_suffix(".pdf")
+    if dest is None or not pdf.is_file():
+        return None
+    try:
+        if (not dest.exists() or dest.stat().st_size != pdf.stat().st_size
+                or dest.stat().st_mtime_ns < pdf.stat().st_mtime_ns):
+            shutil.copy2(pdf, dest)
+    except OSError:
+        return None
+    return dest.relative_to(src()).as_posix()
+
+
 def pdf_state(rel):
     """¿Ya hay un PDF compilado de este .tex y sigue al día? (así no se recompila al abrirlo)"""
     p = resolve(rel, {".tex", ".md"})
@@ -106,7 +131,9 @@ def pdf_state(rel):
     pdf = p.with_suffix(".pdf")
     if not pdf.is_file():
         return {"exists": False, "stale": False}
-    return {"exists": True, "stale": pdf.stat().st_mtime_ns < p.stat().st_mtime_ns, "mtime": int(pdf.stat().st_mtime)}
+    stale = pdf.stat().st_mtime_ns < p.stat().st_mtime_ns
+    return {"exists": True, "stale": stale, "mtime": int(pdf.stat().st_mtime),
+            "published": None if stale else publish_pdf(p)}
 
 
 def compile_tex(rel):
@@ -130,6 +157,7 @@ def compile_tex(rel):
         "log": log,
         "pdf": pdf.relative_to(src()).as_posix() if ok else None,
         "mtime": int(pdf.stat().st_mtime) if ok else 0,
+        "published": publish_pdf(p) if ok else None,
     }
 
 

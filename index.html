@@ -191,6 +191,7 @@
     .badge { padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 700; }
     .badge.ok { background: #ecfdf3; color: #027a48; }
     .badge.warn { background: #fffaeb; color: #b54708; }
+    .badge.latex { background: #eff4ff; color: #1849a9; }
     .badge.err { background: #fef3f2; color: #b42318; }
     .badge.wait { background: #f2f4f7; color: #667085; }
 
@@ -701,6 +702,7 @@
 
     function createItem(file) {
       const kind = file.kind || 'pdf';
+      const generated = !!file.generated;
       const item = document.createElement('article');
       item.className = 'pdf-item' + (file.path === currentPath ? ' active' : '');
       item.dataset.search = [file.name, prettyName(file.name), file.folder].join(' ').toLowerCase();
@@ -713,7 +715,7 @@
       link.title = file.path;
       const pagesText = file.pages ? `<span>${pageLabel(file.pages)}</span>` : '';
       const garbledBadge = file.garbled ? `<span class="badge warn" title="La fuente de estas páginas está dañada en el PDF: se muestran como imagen">${file.garbled} págs. como imagen</span>` : '';
-      const badge = kind === 'pdf'
+      const badge = generated ? '<span class="badge latex">versión LaTeX</span>' : kind === 'pdf'
         ? (file.extracted ? '<span class="badge ok">texto listo</span>'
           : failedPaths.has(file.path) ? '<span class="badge err">error al extraer</span>'
           : '<span class="badge wait">pendiente</span>') + garbledBadge
@@ -734,12 +736,14 @@
         link.target = 'pdfViewer';
         link.addEventListener('click', (event) => { event.preventDefault(); openView(file, item, 'pdf'); });
         tools.appendChild(actionButton('✎', 'Renombrar', () => renameFile(file, item)));
-        tools.appendChild(actionButton('↻', 'Rehacer la extracción de texto e imágenes', () => extractFile(file)));
-        tools.appendChild(actionButton('📊', 'Contar caracteres: PDF original, texto, Markdown y LaTeX', () => showStats(file)));
+        if (!generated) {
+          tools.appendChild(actionButton('↻', 'Rehacer la extracción de texto e imágenes', () => extractFile(file)));
+          tools.appendChild(actionButton('📊', 'Contar caracteres: PDF original, texto, Markdown y LaTeX', () => showStats(file)));
+        }
 
         const views = document.createElement('div');
         views.className = 'card-views';
-        [['pdf', 'PDF'], ['txt', 'Texto'], ['md', 'Markdown'], ['tex', 'LaTeX']].forEach(([view, label]) => {
+        (generated ? [['pdf', 'PDF']] : [['pdf', 'PDF'], ['txt', 'Texto'], ['md', 'Markdown'], ['tex', 'LaTeX']]).forEach(([view, label]) => {
           const button = actionButton(label, 'Ver en ' + label, () => openView(file, item, view));
           button.dataset.view = view;
           views.appendChild(button);

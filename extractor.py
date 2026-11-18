@@ -58,9 +58,14 @@ def skipped(rel_parts):
     return any(p.startswith((".", "_")) or p.endswith(SUFFIX) for p in rel_parts)
 
 
+def is_generated(pdf):
+    """PDF creado por el programa al compilar LaTeX ("... VersionLatex.pdf"): no se extrae."""
+    return Path(pdf).stem.endswith(config.LATEX_SUFFIX)
+
+
 def iter_pdfs(base):
     for pdf in base.rglob("*.pdf"):
-        if pdf.is_file() and not skipped(pdf.relative_to(base).parent.parts):
+        if pdf.is_file() and not skipped(pdf.relative_to(base).parent.parts) and not is_generated(pdf):
             yield pdf
 
 

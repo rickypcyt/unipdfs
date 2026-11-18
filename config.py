@@ -6,6 +6,9 @@ from pathlib import Path
 
 CONFIG = Path(__file__).resolve().parent / "config.json"
 
+# El PDF compilado desde LaTeX se publica en el tema como "<nombre del PDF original> VersionLatex.pdf"
+LATEX_SUFFIX = " VersionLatex"
+
 _PICKER = (
     "import tkinter as tk\n"
     "from tkinter import filedialog\n"

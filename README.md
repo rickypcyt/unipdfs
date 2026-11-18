@@ -43,3 +43,8 @@ Tectonic descarga los paquetes LaTeX que necesita **una sola vez** y los guarda 
 (Windows: `%LOCALAPPDATA%\TectonicProject`; Linux/macOS: `~/.cache/Tectonic`). `setup.py` precarga los
 habituales al instalar, así que después compilar funciona sin internet. Solo si un `.tex` usa un paquete
 nuevo se descargará ese paquete la primera vez.
+
+## PDF compilado desde LaTeX
+Al compilar el LaTeX de un PDF (botón **LaTeX** de su tarjeta), el resultado se guarda dentro del propio tema, junto al
+original y con su mismo nombre más ` VersionLatex`, por ejemplo `Tema 3/Parte I VersionLatex.pdf`. Aparece como una
+tarjeta más (marcada «versión LaTeX») y no se vuelve a extraer.

@@ -62,7 +62,7 @@
   (document.querySelector('main') || document.body).appendChild(lab);
 
   const ed = $('labEditor'), status = $('labStatus'), logBox = $('labLogBox'), logEl = $('labLog');
-  let cur = null, lastPdf = null, dirty = false, compiling = false, autoTimer = null;
+  let cur = null, lastPdf = null, published = null, dirty = false, compiling = false, autoTimer = null;
 
   // ---- estado visual ----
   const say = (text, kind = '') => { status.textContent = text; status.className = 'pill ' + kind; };
@@ -98,7 +98,9 @@
     $('labDownload').style.pointerEvents = pdf ? '' : 'none';
     $('labDownload').style.opacity = pdf ? '' : '.45';
     $('labPrint').disabled = !pdf;
-    if (pdf) { $('labDownload').href = pdfSrc(pdf).split('#')[0].split('?')[0]; $('labDownload').download = pdf.split('/').pop(); }
+    // Si el PDF se publicó en el tema ("<original> VersionLatex.pdf") se descarga/imprime ese; si no, el compilado.
+    const target = (!isMd() && published) || pdf;
+    if (target) { $('labDownload').href = pdfSrc(target).split('#')[0].split('?')[0]; $('labDownload').download = target.split('/').pop(); }
   };
 
   const api = async (url, body) => {
@@ -132,7 +134,7 @@
     if (dirty && !(await uiConfirm('Hay cambios sin guardar. ¿Descartarlos?', { title: 'Cambios sin guardar', okText: 'Descartar', danger: true }))) { $('labFiles').value = cur || ''; return; }
     const d = await api('/api/tex-read?path=' + encodeURIComponent(path));
     if (!d.ok) return say(d.error, 'err');
-    cur = path; ed.value = d.content; setDirty(false);
+    cur = path; ed.value = d.content; setDirty(false); published = null;
     logBox.classList.remove('show');
     setName(); refreshCount();
     await refreshList(path);
@@ -141,7 +143,10 @@
     // El PDF compilado se guarda junto al .tex: si existe y está al día se muestra sin recompilar.
     const pdf = path.replace(/\.tex$/i, '.pdf');
     const state = d.pdf || {};
-    if (state.exists && !state.stale) { lastPdf = pdf; showPdf(pdfSrc(pdf, state.mtime)); say('PDF guardado · sin recompilar', 'ok'); }
+    if (state.exists && !state.stale) {
+      lastPdf = pdf; published = state.published || null; syncButtons();
+      showPdf(pdfSrc(pdf, state.mtime)); say('PDF guardado · sin recompilar', 'ok');
+    }
     else {
       $('labPreview').srcdoc = '<p style="font:15px Segoe UI,Arial,sans-serif;color:#667085;padding:24px">' +
         (state.stale ? 'El .tex cambió desde la última compilación: recompilando…' : 'Generando el PDF por primera vez…') + '</p>';
@@ -176,7 +181,11 @@
       logEl.textContent = d.log || d.error || '';
       logBox.classList.toggle('show', !d.ok);
       $('labLogSummary').textContent = d.ok ? '' : summarize(d.log || d.error);
-      if (d.ok) { lastPdf = d.pdf; showPdf(pdfSrc(d.pdf, d.mtime)); say('Compilado ' + stamp(), 'ok'); }
+      if (d.ok) {
+        lastPdf = d.pdf; published = d.published || null;
+        showPdf(pdfSrc(d.pdf, d.mtime));
+        say(published ? 'Compilado · guardado como ' + published.split('/').pop() : 'Compilado ' + stamp(), 'ok');
+      }
       else {
         say('Error de compilación', 'err');
         const f = $('labPreview');
@@ -242,7 +251,7 @@
   };
 
   $('labPrint').onclick = () => {
-    const pdf = pdfOf();
+    const pdf = (!isMd() && published) || pdfOf();
     if (pdf) window.open(pdfSrc(pdf).replace('#view=FitH', ''), '_blank');
   };
 

@@ -295,8 +295,9 @@ class Handler(SimpleHTTPRequestHandler):
                     "size": stat.st_size,
                     "modified": int(stat.st_mtime),
                     "pages": get_page_count(item) if kind == "pdf" else None,
-                    "extracted": extractor.is_fresh(item) if kind == "pdf" else None,
-                    "garbled": extractor.garbled_pages(item) if kind == "pdf" else None,
+                    "generated": extractor.is_generated(item) if kind == "pdf" else False,
+                    "extracted": extractor.is_fresh(item) if kind == "pdf" and not extractor.is_generated(item) else None,
+                    "garbled": extractor.garbled_pages(item) if kind == "pdf" and not extractor.is_generated(item) else None,
                 })
             files.sort(key=lambda item: (item["folder"].lower(), item["name"].lower()))
             subjects = sorted((f for f in folders if "/" not in f), key=str.lower)
