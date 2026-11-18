@@ -146,24 +146,89 @@ def _extract(pdf, dest):
     finally:
         doc.close()
 
-    # Páginas con texto ilegible: se incluye su imagen (la primera de la página) en lugar del texto roto.
     doc = pymupdf.open(str(pdf))
     try:
-        for p in pages:
-            if p.get("garbled") and not p["duplicate_of"]:
+        def render_pages():
+            for p in pages:
                 name = f"pagina_{p['number']:03d}.png"
-                doc[p["number"] - 1].get_pixmap(dpi=110).save(str(images_dir / name))
-                by_page.setdefault(p["number"], []).insert(0, "imagenes/" + name)
+                if (p.get("garbled") or p.get("blocked")) and not p["duplicate_of"] and not (images_dir / name).exists():
+                    doc[p["number"] - 1].get_pixmap(dpi=110).save(str(images_dir / name))
+                    by_page.setdefault(p["number"], []).insert(0, "imagenes/" + name)
+
+        title = limpieza.pretty_title(pdf.stem)
+        render_pages()
+        write_outputs(tmp, pages, title, by_page)
+        bad = unreadable([tmp / n for n in OUTPUTS])
+        if bad:
+            # Un antivirus (Defender) bloquea algún fragmento, p. ej. un ejemplo de código de ataque.
+            # Se localizan los fragmentos exactos, se sustituyen por un aviso y se muestra la imagen.
+            redact_blocked(pages, tmp)
+            render_pages()
+            write_outputs(tmp, pages, title, by_page)
+            bad = unreadable([tmp / n for n in OUTPUTS])
+            if bad:
+                raise BlockedError("El antivirus bloquea " + ", ".join(p.name for p in bad)
+                                   + " incluso tras omitir los fragmentos sospechosos.")
     finally:
         doc.close()
-    garbled_pages = sum(1 for p in pages if p.get("garbled"))
-    md = limpieza.to_markdown(pages, limpieza.pretty_title(pdf.stem), by_page)
+    flagged = sum(1 for p in pages if p.get("garbled") or p.get("blocked"))
+    return tmp, len(pages), count, flagged
+
+
+PROBE_WAIT = 1.5  # segundos que se deja al antivirus para analizar los archivos recién escritos
+BLOCKED_NOTE = "[fragmento omitido: el antivirus lo marca como sospechoso (es un ejemplo de código); ver la imagen de la página]"
+
+
+def write_outputs(tmp, pages, title, by_page):
+    md = limpieza.to_markdown(pages, title, by_page)
     (tmp / "texto.txt").write_text(limpieza.to_text(pages), encoding="utf-8")
     (tmp / "texto.md").write_text(md, encoding="utf-8")
     # Versión LaTeX lista para editar y compilar en el Taller (las imágenes van con ruta relativa).
     import latex_api
     (tmp / "texto.tex").write_text(latex_api.markdown_to_latex(md, tmp), encoding="utf-8")
-    return tmp, len(pages), count, garbled_pages
+
+
+def unreadable(paths, wait=PROBE_WAIT):
+    """Archivos que no se pueden leer (Windows devuelve 'Invalid argument' si el antivirus los bloquea)."""
+    time.sleep(wait)
+    bad = []
+    for p in paths:
+        try:
+            p.read_bytes()
+        except OSError:
+            bad.append(p)
+    return bad
+
+
+def _probe(texts, folder):
+    """Índices de `texts` que el antivirus bloquea al escribirlos en un archivo."""
+    probe_dir = folder / ".probe"
+    shutil.rmtree(probe_dir, ignore_errors=True)
+    probe_dir.mkdir()
+    paths = []
+    for i, text in enumerate(texts):
+        path = probe_dir / f"{i:05d}.txt"
+        path.write_text(text, encoding="utf-8")
+        paths.append(path)
+    blocked = {int(p.stem) for p in unreadable(paths)}
+    shutil.rmtree(probe_dir, ignore_errors=True)
+    return blocked
+
+
+def redact_blocked(pages, folder):
+    candidates = [p for p in pages if not p["duplicate_of"] and (p["items"] or p["title"])]
+    bad_pages = _probe([limpieza.to_text([p]) for p in candidates], folder)
+    for index in sorted(bad_pages):
+        page = candidates[index]
+        parts = [page["title"]] + [text for _, _, text in page["items"]]
+        hits = _probe(parts, folder)
+        if not hits:  # solo bloquea la combinación: se omite todo el texto de la página
+            hits = set(range(len(parts)))
+        if 0 in hits and page["title"]:
+            page["title"] = BLOCKED_NOTE
+        page["items"] = [(kind, level, BLOCKED_NOTE if (i + 1) in hits else text)
+                         for i, (kind, level, text) in enumerate(page["items"])]
+        page["blocked"] = len(hits)
 
 
 def ensure(pdf, force=False):

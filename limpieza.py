@@ -20,8 +20,15 @@ NUMBERED = re.compile(r"^(\d{1,2}(?:\.\d{1,2})*)[.)]\s+(.*)")
 _INNER = re.compile(r"[A-Za-zÀ-ÿ0-9][’‘´ˆ`ͻ][A-Za-zÀ-ÿ0-9’‘´]|[A-Za-zÀ-ÿ]%(?![0-9A-Fa-f]{2})[A-Za-zÀ-ÿ’‘´]")
 
 
+_POSSESSIVE = re.compile(r"(?<=[A-Za-z])[’']s(?![A-Za-z])", re.I)  # "URL’s" es texto normal
+
+
+def weird_count(line):
+    return len(_INNER.findall(_POSSESSIVE.sub("", line)))
+
+
 def is_garbled(line):
-    n = len(_INNER.findall(line))
+    n = weird_count(line)
     return n >= 2 or (n >= 1 and len(line.split()) <= 3)
 
 
@@ -98,7 +105,8 @@ def analyze(doc):
         number = index + 1
         rows = [r for r in rows
                 if _norm(r["text"]) not in repeated and r["text"] != str(number)]
-        garbled = [r for r in rows if is_garbled(r["text"])]
+        # Cualquier línea con signos raros dentro de las palabras indica fuente rota en esa página.
+        garbled = [r for r in rows if weird_count(r["text"])]
         rows = [r for r in rows if r not in garbled]
 
         title = ""
@@ -187,13 +195,21 @@ def to_markdown(pages, title="", images=None):
         if p["duplicate_of"]:
             out += [f"<!-- p. {n}: repite la p. {p['duplicate_of']} -->", ""]
             continue
-        if p["title"]:
-            out.append(f"## {p['title']}")
+        flagged = p.get("garbled") or p.get("blocked")
+        page_images = list(images.get(n, []))
+        heading = p["title"] or (f"Diapositiva {n}" if flagged else "")
+        if heading:
+            out.append(f"## {heading}")
         out += [f"<sub>p. {n}</sub>", ""]
         prev_kind = None
         if p.get("garbled"):
-            out += ["> ⚠ Parte del texto de esta diapositiva no se puede leer (la fuente del PDF está dañada). "
-                    "Se muestra la imagen de la página.", ""]
+            out += ["*Nota: parte del texto de esta diapositiva no se puede leer (la fuente del PDF está dañada); "
+                    "se muestra la imagen de la página.*", ""]
+        if p.get("blocked"):
+            out += ["*Nota: un fragmento de código de esta diapositiva se omitió porque el antivirus lo detecta "
+                    "como sospechoso; se muestra la imagen de la página.*", ""]
+        if flagged and page_images:
+            out += [f"![diapositiva {n}]({page_images.pop(0)})", ""]
         for kind, level, text in p["items"]:
             text = text.replace("*", "\\*")
             if kind == "p":
@@ -206,9 +222,9 @@ def to_markdown(pages, title="", images=None):
             prev_kind = kind
         if prev_kind in ("ul", "ol"):
             out.append("")
-        for img in images.get(n, []):
+        for img in page_images:
             out += [f"![p. {n}]({img})", ""]
-        if not p["items"] and not images.get(n) and not p.get("garbled"):
+        if not p["items"] and not images.get(n) and not p.get("garbled") and not p.get("blocked"):
             out += ["*(diapositiva sin texto)*", ""]
     return "\n".join(out).strip() + "\n"
 
@@ -221,6 +237,8 @@ def to_text(pages):
             out += [f"=== p. {n} (repite la p. {p['duplicate_of']}) ===", ""]
             continue
         out.append(f"=== p. {n}" + (f" · {p['title']}" if p["title"] else "") + " ===")
+        if p.get("blocked"):
+            out.append(f"[fragmento omitido por el antivirus; ver imagenes/pagina_{n:03d}.png]")
         if p.get("garbled"):
             out.append(f"[texto ilegible en esta página: fuente dañada en el PDF; ver imagenes/pagina_{n:03d}.png]")
         for kind, level, text in p["items"]:
