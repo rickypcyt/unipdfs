@@ -196,6 +196,11 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
+    def end_headers(self):
+        # Sin caché: así cada cambio de la app se ve al recargar, sin Ctrl+F5.
+        self.send_header("Cache-Control", "no-cache, must-revalidate")
+        super().end_headers()
+
     def _html(self, page):
         body = page.encode("utf-8")
         self.send_response(200)
