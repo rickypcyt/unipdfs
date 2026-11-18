@@ -76,6 +76,11 @@
       line-height: 1.4;
     }
 
+    .subject-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .subject-row select { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-weight: 700; background: #fff; color: var(--text); }
+    .subject-row button { padding: 0 14px; border: 1px solid var(--border); border-radius: 8px; background: #fff; font-size: 18px; cursor: pointer; }
+    .subject-row button:hover { border-color: var(--accent); }
+
     .search {
       width: 100%;
       margin-bottom: 14px;
@@ -338,6 +343,10 @@
       <h1>PDFs disponibles</h1>
       <p class="subtitle">Selecciona un documento para verlo en su portada.</p>
       <p class="mode-notice" id="modeNotice" hidden></p>
+      <div class="subject-row">
+        <select id="subject" title="Elegir asignatura"></select>
+        <button type="button" id="subjectNew" title="Nueva asignatura">+</button>
+      </div>
       <input class="search" id="search" type="search" placeholder="Buscar PDF o carpeta...">
       <div class="pdf-list" id="pdfList"></div>
       <p class="empty" id="empty">No se encontraron PDF con ese filtro.</p>
@@ -367,6 +376,34 @@
     const openNew = document.getElementById('openNew');
     const pdfList = document.getElementById('pdfList');
     const viewer = document.querySelector('iframe[name="pdfViewer"]');
+
+    const subjectSel = document.getElementById('subject');
+    let subjects = [];
+
+    function fillSubjects(pick) {
+      let saved = null;
+      try { saved = localStorage.getItem('subject'); } catch (e) {}
+      const want = pick || subjectSel.value || saved;
+      subjectSel.innerHTML = subjects.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+      subjectSel.value = subjects.includes(want) ? want : (subjects[0] || '');
+    }
+
+    subjectSel.addEventListener('change', () => {
+      try { localStorage.setItem('subject', subjectSel.value); } catch (e) {}
+      render();
+    });
+
+    document.getElementById('subjectNew').addEventListener('click', async () => {
+      if (!apiEnabled) return alert('Ejecuta iniciar.bat para crear asignaturas.');
+      const name = prompt('Nombre de la nueva asignatura:');
+      if (!name) return;
+      const r = await (await fetch('/api/subject-new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })).json();
+      if (!r.ok) return alert(r.error);
+      subjects.push(r.name);
+      subjects.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+      fillSubjects(r.name);
+      subjectSel.dispatchEvent(new Event('change'));
+    });
 
     let files = [];
     let apiEnabled = false;
@@ -622,7 +659,10 @@
     function render() {
       pdfList.innerHTML = '';
       pdfList.classList.remove('searching');
-      renderNode(buildTree(files), pdfList);
+      const inSubject = files
+        .filter((f) => (f.folder || '').split('/')[0] === subjectSel.value)
+        .map((f) => ({ ...f, folder: f.folder.split('/').slice(1).join('/') }));
+      renderNode(buildTree(inSubject), pdfList);
       applyFilter();
     }
 
@@ -651,14 +691,17 @@
         if (!response.ok) throw new Error('API no disponible');
         const data = await response.json();
         files = data.files || [];
+        subjects = data.subjects || [];
         apiEnabled = true;
         modeNotice.hidden = true;
       } catch (error) {
         files = FALLBACK_FILES;
+        subjects = [];
         apiEnabled = false;
         modeNotice.hidden = false;
         modeNotice.textContent = 'Modo solo lectura: ejecuta iniciar.bat y entra por http://localhost:8000 para renombrar o extraer archivos.';
       }
+      fillSubjects();
       render();
     }
 

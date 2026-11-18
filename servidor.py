@@ -222,7 +222,8 @@ class Handler(SimpleHTTPRequestHandler):
                     "pages": get_page_count(pdf),
                 })
             files.sort(key=lambda item: (item["folder"].lower(), item["name"].lower()))
-            self._json({"files": files})
+            subjects = sorted((d.name for d in UNI.iterdir() if d.is_dir()), key=str.lower) if UNI.is_dir() else []
+            self._json({"files": files, "subjects": subjects})
             return
 
         if path == "/api/extract":
@@ -314,6 +315,16 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == "/api/subject-new":
+            try:
+                name = INVALID_NAME_CHARS.sub("_", str(self._read_json().get("name", ""))).strip().strip(".")
+                if not name:
+                    raise ValueError("Nombre no válido")
+                (UNI / name).mkdir(parents=True, exist_ok=True)
+                self._json({"ok": True, "name": name})
+            except Exception as exc:
+                self._json({"ok": False, "error": str(exc)}, 400)
+            return
         if path.startswith("/api/tex-") or path.startswith("/api/pdf-") or path.startswith("/api/md-"):
             self._latex_post(path)
             return

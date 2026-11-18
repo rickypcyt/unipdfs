@@ -104,7 +104,7 @@
   });
 
   $('labNew').onclick = async () => {
-    const name = prompt('Ruta del nuevo archivo (ej. University/Assignment 1/apuntes.tex):', 'University/Assignment 1/nuevo.tex');
+    const name = prompt('Ruta del nuevo archivo (ej. University/Assignment 1/apuntes.tex):', 'University/' + ((document.getElementById('subject') || {}).value || 'Assignment 1') + '/nuevo.tex');
     if (!name) return;
     const d = await api('/api/tex-new', { path: name });
     if (!d.ok) return say(d.error, true);
