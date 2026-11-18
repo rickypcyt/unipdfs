@@ -76,6 +76,10 @@
       line-height: 1.4;
     }
 
+    .source-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .source-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; color: var(--muted); font-size: 12px; }
+    .source-row button { padding: 6px 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; }
+    .welcome { padding: 14px; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted); font-size: 13px; line-height: 1.5; }
     .subject-row { display: flex; gap: 8px; margin-bottom: 12px; }
     .subject-row select { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-weight: 700; background: #fff; color: var(--text); }
     .subject-row button { padding: 0 14px; border: 1px solid var(--border); border-radius: 8px; background: #fff; font-size: 18px; cursor: pointer; }
@@ -343,6 +347,10 @@
       <h1>PDFs disponibles</h1>
       <p class="subtitle">Selecciona un documento para verlo en su portada.</p>
       <p class="mode-notice" id="modeNotice" hidden></p>
+      <div class="source-row">
+        <span id="rootPath" title="Carpeta fuente">Sin carpeta</span>
+        <button type="button" id="pickRoot">Elegir carpeta…</button>
+      </div>
       <div class="subject-row">
         <select id="subject" title="Elegir asignatura"></select>
         <button type="button" id="subjectNew" title="Nueva asignatura">+</button>
@@ -378,7 +386,19 @@
     const viewer = document.querySelector('iframe[name="pdfViewer"]');
 
     const subjectSel = document.getElementById('subject');
+    const rootPath = document.getElementById('rootPath');
     let subjects = [];
+    let configured = true;
+
+    document.getElementById('pickRoot').addEventListener('click', async () => {
+      if (!apiEnabled) return alert('Ejecuta iniciar.bat y entra por http://localhost:8000');
+      rootPath.textContent = 'Eligiendo carpeta…';
+      try {
+        const r = await (await fetch('/api/pick-folder', { method: 'POST' })).json();
+        if (!r.ok) alert(r.error);
+      } catch (e) { alert(String(e)); }
+      loadFiles();
+    });
 
     function fillSubjects(pick) {
       let saved = null;
@@ -411,7 +431,7 @@
     const collapsedFolders = new Set();
 
     function pdfUrl(path) {
-      return './' + path.split('/').map(encodeURIComponent).join('/') + '#page=1';
+      return '/files/' + path.split('/').map(encodeURIComponent).join('/') + '#page=1';
     }
 
     function prettyName(name) {
@@ -659,6 +679,11 @@
     function render() {
       pdfList.innerHTML = '';
       pdfList.classList.remove('searching');
+      if (!configured) {
+        pdfList.innerHTML = '<div class="welcome"><b>Elige tu carpeta de asignaturas.</b><br>Debe contener una carpeta por asignatura y, dentro de cada una, su temario (PDF, .tex, .md). Pulsa «Elegir carpeta…».</div>';
+        empty.style.display = 'none';
+        return;
+      }
       const inSubject = files
         .filter((f) => (f.folder || '').split('/')[0] === subjectSel.value)
         .map((f) => ({ ...f, folder: f.folder.split('/').slice(1).join('/') }));
@@ -692,11 +717,15 @@
         const data = await response.json();
         files = data.files || [];
         subjects = data.subjects || [];
+        configured = data.configured !== false;
+        rootPath.textContent = data.root || 'Sin carpeta';
+        rootPath.title = data.root || '';
         apiEnabled = true;
         modeNotice.hidden = true;
       } catch (error) {
         files = FALLBACK_FILES;
         subjects = [];
+        configured = true;
         apiEnabled = false;
         modeNotice.hidden = false;
         modeNotice.textContent = 'Modo solo lectura: ejecuta iniciar.bat y entra por http://localhost:8000 para renombrar o extraer archivos.';

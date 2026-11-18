@@ -19,15 +19,17 @@ App local (Python + navegador) para organizar el temario de varias asignaturas y
 La primera ejecución ejecuta `setup.py` (instala PyMuPDF y descarga Tectonic). Se abre `http://localhost:8000`.
 
 ## Tus asignaturas
-Pon tus archivos en `University/`. Al arrancar se crean `Assignment 1` … `Assignment 5`; renómbralas o crea más.
-Esa carpeta **no se sube a git** (son tus apuntes).
+La primera vez la app te pide **elegir una carpeta** (se abre el selector de Windows). Esa carpeta debe contener una carpeta por asignatura y, dentro de cada una, su temario:
 
 ```
-University/
-  Assignment 1/
+MiCarpeta/
+  Redes/
     Tema 1/   Tema 2/   ...
-  Assignment 2/
+  Algebra/
+    Tema 1/   ...
 ```
+
+Luego eliges la asignatura en el desplegable de la barra lateral (el botón **+** crea una nueva). Puedes cambiar de carpeta cuando quieras con **Elegir carpeta…**. La elección se guarda en `config.json` (no se sube a git) y tus archivos nunca salen de tu carpeta.
 
 ## Limitaciones
 - PDF → Markdown no reconoce bien fórmulas, tablas ni imágenes: revisa el resultado.

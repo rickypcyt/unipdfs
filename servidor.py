@@ -4,10 +4,11 @@ import logging
 import re
 import shutil
 import webbrowser
+import config
 import latex_api
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 try:
     from pypdf import PdfReader
@@ -23,8 +24,14 @@ logging.getLogger("pypdf").setLevel(logging.ERROR)
 logging.getLogger("pymupdf").setLevel(logging.ERROR)
 
 ROOT = Path(__file__).resolve().parent
-UNI = ROOT / "University"
-ASSIGNMENTS = 5
+
+
+def source_root():
+    r = config.root()
+    if r is None:
+        raise RuntimeError("Elige primero la carpeta de asignaturas")
+    return r
+
 PORT = 8000
 INVALID_NAME_CHARS = re.compile(r'[\\/:*?"<>|]')
 PAGE_CACHE = {}
@@ -96,7 +103,7 @@ def extract_pdf_to_folder(pdf_path):
     (output_dir / "texto.txt").write_text("\n".join(text_parts), encoding="utf-8")
 
     return {
-        "folder": output_dir.relative_to(ROOT).as_posix(),
+        "folder": output_dir.relative_to(source_root()).as_posix(),
         "pages": len(text_parts),
         "images": image_count,
     }
@@ -110,7 +117,7 @@ def ensure_extraction(pdf_path):
 
 
 def static_url(rel_path):
-    return "/" + "/".join(quote(segment) for segment in rel_path.split("/"))
+    return "/files/" + "/".join(quote(segment) for segment in rel_path.split("/"))
 
 
 def build_preview_html(pdf_path, output_dir):
@@ -152,7 +159,7 @@ def build_preview_html(pdf_path, output_dir):
     for page in pages:
         images = []
         for index, image_path in enumerate(page["images"], start=1):
-            rel = (output_dir / "imagenes" / image_path.name).relative_to(ROOT).as_posix()
+            rel = (output_dir / "imagenes" / image_path.name).relative_to(source_root()).as_posix()
             src = static_url(rel)
             images.append(f'<img src="{html.escape(src, quote=True)}" alt="Imagen {index} de la página {page["number"]}">')
         body.append(
@@ -161,7 +168,7 @@ def build_preview_html(pdf_path, output_dir):
             f'<div class="images">{"".join(images)}</div></section>'
         )
 
-    pdf_url = static_url(pdf_path.relative_to(ROOT).as_posix()) + "#page=1"
+    pdf_url = static_url(pdf_path.relative_to(source_root()).as_posix()) + "#page=1"
     return (
         '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -196,34 +203,48 @@ class Handler(SimpleHTTPRequestHandler):
     def _resolve_pdf(self, rel_path):
         if not rel_path:
             return None, "Falta la ruta del PDF"
-        pdf = (ROOT / rel_path).resolve()
+        pdf = (source_root() / rel_path).resolve()
         try:
-            pdf.relative_to(UNI.resolve())
+            pdf.relative_to(source_root())
         except ValueError:
             return None, "Ruta no válida"
         if not pdf.is_file() or pdf.suffix.lower() != ".pdf":
             return None, "El archivo no existe o no es PDF"
         return pdf, None
 
+    def translate_path(self, path):
+        p = unquote(urlparse(path).path)
+        if p.startswith("/files/"):
+            base = config.root()
+            target = (base / p[len("/files/"):]).resolve() if base else None
+            if target is None or base not in target.parents and target != base:
+                return str(ROOT / "__no_existe__")
+            return str(target)
+        return super().translate_path(path)
+
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/api/files":
+            base = config.root()
+            if base is None:
+                self._json({"configured": False, "root": "", "files": [], "subjects": []})
+                return
             files = []
-            for pdf in UNI.rglob("*.pdf"):
+            for pdf in base.rglob("*.pdf"):
                 if not pdf.is_file():
                     continue
                 stat = pdf.stat()
                 files.append({
-                    "path": pdf.relative_to(ROOT).as_posix(),
+                    "path": pdf.relative_to(source_root()).as_posix(),
                     "name": pdf.name,
-                    "folder": pdf.parent.relative_to(UNI).as_posix() if pdf.parent != UNI else "",
+                    "folder": pdf.parent.relative_to(base).as_posix() if pdf.parent != base else "",
                     "size": stat.st_size,
                     "modified": int(stat.st_mtime),
                     "pages": get_page_count(pdf),
                 })
             files.sort(key=lambda item: (item["folder"].lower(), item["name"].lower()))
-            subjects = sorted((d.name for d in UNI.iterdir() if d.is_dir()), key=str.lower) if UNI.is_dir() else []
-            self._json({"files": files, "subjects": subjects})
+            subjects = sorted((d.name for d in base.iterdir() if d.is_dir() and not d.name.startswith((".", "_"))), key=str.lower)
+            self._json({"configured": True, "root": str(base), "files": files, "subjects": subjects})
             return
 
         if path == "/api/extract":
@@ -301,13 +322,13 @@ class Handler(SimpleHTTPRequestHandler):
                 md = latex_api.pdf_to_markdown(pdf)
                 md_path = pdf.with_suffix(".md")
                 md_path.write_text(md, encoding="utf-8")
-                self._json({"ok": True, "path": md_path.relative_to(ROOT).as_posix(), "content": md})
+                self._json({"ok": True, "path": md_path.relative_to(source_root()).as_posix(), "content": md})
             elif path == "/api/md-to-tex":
                 md_file = latex_api.resolve(rel, {".md"})
                 tex = latex_api.markdown_to_latex(data.get("content") or md_file.read_text(encoding="utf-8"))
                 tex_path = md_file.with_name(md_file.stem + "_final.tex")
                 tex_path.write_text(tex, encoding="utf-8")
-                self._json({"ok": True, "path": tex_path.relative_to(ROOT).as_posix()})
+                self._json({"ok": True, "path": tex_path.relative_to(source_root()).as_posix()})
             else:
                 self.send_error(404)
         except Exception as exc:
@@ -315,12 +336,21 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == "/api/pick-folder":
+            try:
+                chosen = config.pick_folder()
+                if chosen:
+                    config.set_root(chosen)
+                self._json({"ok": True, "chosen": bool(chosen), "root": chosen})
+            except Exception as exc:
+                self._json({"ok": False, "error": str(exc)}, 500)
+            return
         if path == "/api/subject-new":
             try:
                 name = INVALID_NAME_CHARS.sub("_", str(self._read_json().get("name", ""))).strip().strip(".")
                 if not name:
                     raise ValueError("Nombre no válido")
-                (UNI / name).mkdir(parents=True, exist_ok=True)
+                (source_root() / name).mkdir(parents=True, exist_ok=True)
                 self._json({"ok": True, "name": name})
             except Exception as exc:
                 self._json({"ok": False, "error": str(exc)}, 400)
@@ -361,7 +391,7 @@ class Handler(SimpleHTTPRequestHandler):
             source.rename(destination)
             self._json({
                 "ok": True,
-                "path": destination.relative_to(ROOT).as_posix(),
+                "path": destination.relative_to(source_root()).as_posix(),
                 "name": destination.name,
             })
         except Exception as exc:
@@ -369,8 +399,6 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main():
-    for n in range(1, ASSIGNMENTS + 1):
-        (UNI / f"Assignment {n}").mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://localhost:{PORT}"
     print(f"Servidor listo en {url}")

@@ -11,7 +11,15 @@ except Exception:
     pymupdf = None
 
 ROOT = Path(__file__).resolve().parent
-UNI = ROOT / "University"
+
+
+def src():
+    import config
+    r = config.root()
+    if r is None:
+        raise RuntimeError("Elige primero la carpeta de asignaturas")
+    return r
+
 _EXE = "tectonic.exe" if sys.platform == "win32" else "tectonic"
 _LOCAL = ROOT / "_herramientas" / "tectonic" / _EXE
 TECTONIC = _LOCAL if _LOCAL.exists() else Path(shutil.which("tectonic") or _LOCAL)
@@ -44,8 +52,8 @@ Escribe aquí.
 def resolve(rel, suffixes):
     if not rel:
         raise ValueError("Falta la ruta")
-    p = (ROOT / rel).resolve()
-    p.relative_to(UNI.resolve())  # ValueError si se sale de University/
+    p = (src() / rel).resolve()
+    p.relative_to(src())  # ValueError si se sale de la carpeta fuente
     if p.suffix.lower() not in suffixes:
         raise ValueError("Tipo de archivo no permitido")
     return p
@@ -53,8 +61,9 @@ def resolve(rel, suffixes):
 
 def list_tex():
     out = []
-    for f in UNI.rglob("*.tex"):
-        rel = f.relative_to(ROOT)
+    base = src()
+    for f in base.rglob("*.tex"):
+        rel = f.relative_to(base)
         if any(part in SKIP_DIRS for part in rel.parts):
             continue
         out.append({
@@ -86,7 +95,7 @@ def new_tex(rel):
     if p.exists():
         raise FileExistsError("Ya existe un archivo con ese nombre")
     save_text(rel, TEMPLATE)
-    return p.relative_to(ROOT).as_posix()
+    return p.relative_to(src()).as_posix()
 
 
 def compile_tex(rel):
@@ -108,7 +117,7 @@ def compile_tex(rel):
     return {
         "ok": ok,
         "log": log,
-        "pdf": pdf.relative_to(ROOT).as_posix() if ok else None,
+        "pdf": pdf.relative_to(src()).as_posix() if ok else None,
         "mtime": int(pdf.stat().st_mtime) if ok else 0,
     }
 

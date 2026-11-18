@@ -4,6 +4,6 @@ _herramientas/
 *.log
 *.aux
 *.xdv
-# Tus apuntes y PDFs son personales: no se suben
-University/*
-!University/README.md
+config.json
+# Datos de ejemplo/personales del autor
+University/

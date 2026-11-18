@@ -30,7 +30,7 @@
     return r.json();
   };
   const isMd = () => cur && cur.toLowerCase().endsWith('.md');
-  const pdfSrc = (p, m) => './' + p.split('/').map(encodeURIComponent).join('/') + '?v=' + (m || Date.now()) + '#view=FitH';
+  const pdfSrc = (p, m) => '/files/' + p.split('/').map(encodeURIComponent).join('/') + '?v=' + (m || Date.now()) + '#view=FitH';
 
   function showPane() {
     const md = isMd();
@@ -104,7 +104,7 @@
   });
 
   $('labNew').onclick = async () => {
-    const name = prompt('Ruta del nuevo archivo (ej. University/Assignment 1/apuntes.tex):', 'University/' + ((document.getElementById('subject') || {}).value || 'Assignment 1') + '/nuevo.tex');
+    const name = prompt('Ruta del nuevo archivo (ej. Redes/apuntes.tex):', ((document.getElementById('subject') || {}).value || 'Asignatura') + '/nuevo.tex');
     if (!name) return;
     const d = await api('/api/tex-new', { path: name });
     if (!d.ok) return say(d.error, true);
