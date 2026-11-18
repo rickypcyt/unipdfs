@@ -236,6 +236,8 @@
       color: var(--accent);
     }
 
+    .rename-input { flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 2px solid var(--accent); border-radius: 8px; font-size: 14px; }
+
     .empty {
       display: none;
       padding: 18px;
@@ -398,12 +400,12 @@
     let configured = true;
 
     document.getElementById('pickRoot').addEventListener('click', async () => {
-      if (!apiEnabled) return alert('Ejecuta iniciar.bat y entra por http://localhost:8000');
+      if (!apiEnabled) return uiAlert('Ejecuta iniciar.bat y entra por http://localhost:8000');
       rootPath.textContent = 'Eligiendo carpeta…';
       try {
         const r = await postJson('/api/pick-folder');
-        if (!r.ok) alert(r.error);
-      } catch (e) { alert(String(e)); }
+        if (!r.ok) uiAlert(r.error, 'No se pudo elegir la carpeta');
+      } catch (e) { uiAlert(String(e)); }
       loadFiles();
     });
 
@@ -421,11 +423,11 @@
     });
 
     document.getElementById('subjectNew').addEventListener('click', async () => {
-      if (!apiEnabled) return alert('Ejecuta iniciar.bat para crear asignaturas.');
-      const name = prompt('Nombre de la nueva asignatura:');
+      if (!apiEnabled) return uiAlert('Ejecuta iniciar.bat para crear asignaturas.');
+      const name = await uiPrompt('Nueva asignatura', '', 'Se creará una carpeta con este nombre dentro de tu carpeta fuente.');
       if (!name) return;
       const r = await postJson('/api/subject-new', { name });
-      if (!r.ok) return alert(r.error);
+      if (!r.ok) return uiAlert(r.error);
       subjects.push(r.name);
       subjects.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
       fillSubjects(r.name);
@@ -519,34 +521,54 @@
       openNew.href = pdfUrl(file.path);
     }
 
-    async function renameFile(file, item) {
+    function renameFile(file, item) {
       if (!apiEnabled) {
-        alert('Para renombrar archivos abre la página con iniciar.bat y entra por http://localhost:8000.');
+        uiAlert('Para renombrar archivos abre la página con iniciar.bat y entra por http://localhost:8000.');
         return;
       }
+      const link = item.querySelector('a');
+      if (!link || item.querySelector('.rename-input')) return;
 
-      const nextName = prompt('Nuevo nombre para el PDF:', file.name);
-      if (nextName === null) return;
+      const input = document.createElement('input');
+      input.className = 'rename-input';
+      input.value = file.name;
+      link.style.display = 'none';
+      item.insertBefore(input, link);
+      input.focus();
+      input.setSelectionRange(0, file.name.replace(/\.pdf$/i, '').length);
 
-      try {
-        const response = await fetch('/api/rename', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: file.path, newName: nextName })
-        });
-        const data = await response.json();
-        if (!data.ok) throw new Error(data.error || 'No se pudo renombrar');
+      let finished = false;
+      const close = () => { finished = true; input.remove(); link.style.display = ''; };
 
-        await loadFiles();
-        if (currentPath === file.path) {
-          currentPath = data.path;
-          currentFile.textContent = data.name;
-          openNew.href = pdfUrl(data.path);
-          if (viewer) viewer.src = pdfUrl(data.path);
+      const commit = async () => {
+        if (finished) return;
+        const nextName = input.value.trim();
+        if (!nextName || nextName === file.name) return close();
+        finished = true;
+        input.disabled = true;
+        try {
+          const data = await postJson('/api/rename', { path: file.path, newName: nextName });
+          if (!data.ok) throw new Error(data.error || 'No se pudo renombrar');
+          if (currentPath === file.path) {
+            currentPath = data.path;
+            currentFile.textContent = data.name;
+            openNew.href = pdfUrl(data.path);
+            if (viewer) viewer.src = pdfUrl(data.path);
+          }
+          await loadFiles();
+        } catch (error) {
+          input.remove();
+          link.style.display = '';
+          uiAlert(error.message, 'Error al renombrar');
         }
-      } catch (error) {
-        alert('Error al renombrar: ' + error.message);
-      }
+      };
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { e.preventDefault(); close(); }
+      });
+      input.addEventListener('blur', commit);
+      ['click', 'mousedown'].forEach((ev) => input.addEventListener(ev, (e) => e.stopPropagation()));
     }
 
     function showToast(message) {
@@ -563,7 +585,7 @@
 
     async function extractFile(file) {
       if (!apiEnabled) {
-        alert('Para extraer texto e imágenes abre la página con iniciar.bat y entra por http://localhost:8000.');
+        uiAlert('Para extraer texto e imágenes abre la página con iniciar.bat y entra por http://localhost:8000.');
         return;
       }
 
@@ -573,13 +595,13 @@
         if (!data.ok) throw new Error(data.error || 'No se pudo extraer');
         showToast(`Extracción guardada en ${data.folder} (${data.images} imágenes)`);
       } catch (error) {
-        alert('Error al extraer: ' + error.message);
+        uiAlert(error.message, 'Error al extraer');
       }
     }
 
     function previewFile(file, item) {
       if (!apiEnabled) {
-        alert('Para ver la extracción abre la página con iniciar.bat y entra por http://localhost:8000.');
+        uiAlert('Para ver la extracción abre la página con iniciar.bat y entra por http://localhost:8000.');
         return;
       }
       const url = '/api/preview?path=' + encodeURIComponent(file.path);
@@ -764,6 +786,7 @@
     setInterval(watchFolder, 2000);
     document.addEventListener('visibilitychange', watchFolder);
   </script>
+  <script src="ui.js"></script>
   <script src="lab.js"></script>
 </body>
 </html>

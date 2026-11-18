@@ -60,7 +60,7 @@
   }
 
   async function open(path) {
-    if (dirty && !confirm('Hay cambios sin guardar. ¿Descartarlos?')) { $('labFiles').value = cur || ''; return; }
+    if (dirty && !(await uiConfirm('Hay cambios sin guardar. ¿Descartarlos?', { title: 'Cambios sin guardar', okText: 'Descartar', danger: true }))) { $('labFiles').value = cur || ''; return; }
     const d = await api('/api/tex-read?path=' + encodeURIComponent(path));
     if (!d.ok) return say(d.error, true);
     cur = path; ed.value = d.content; dirty = false;
@@ -106,7 +106,7 @@
   });
 
   $('labNew').onclick = async () => {
-    const name = prompt('Ruta del nuevo archivo (ej. Redes/apuntes.tex):', ((document.getElementById('subject') || {}).value || 'Asignatura') + '/nuevo.tex');
+    const name = await uiPrompt('Nuevo archivo .tex', ((document.getElementById('subject') || {}).value || 'Asignatura') + '/nuevo.tex', 'Ruta dentro de tu carpeta fuente, p. ej. Redes/apuntes.tex');
     if (!name) return;
     const d = await api('/api/tex-new', { path: name });
     if (!d.ok) return say(d.error, true);
