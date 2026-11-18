@@ -209,6 +209,14 @@
     .card-views button:hover { border-color: var(--accent); color: var(--accent); }
     .card-views button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+    .stats { overflow-x: auto; }
+    .stats table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .stats th { padding: 6px 8px; text-align: right; color: #667085; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .stats td { padding: 8px; border-top: 1px solid #eaecf0; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .stats th:first-child, .stats td:first-child { text-align: left; white-space: normal; font-weight: 600; }
+    .stats tr.orig td { background: #f8fafc; }
+    .stats-note { margin: 12px 0 14px; color: #667085; font-size: 12px; line-height: 1.5; }
+
     .rename-input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border: 2px solid var(--accent); border-radius: 8px; font-size: 14px; outline: none; }
 
     .empty {
@@ -656,6 +664,41 @@
       if (window.openLabFile) window.openLabFile(extractionDir(file) + '/texto.tex');
     }
 
+    async function showStats(file) {
+      if (!apiEnabled) return uiAlert('Para contar caracteres abre la página con iniciar.bat y entra por http://localhost:8000.');
+      showToast('Contando…');
+      const r = await fetch('/api/stats?path=' + encodeURIComponent(file.path), { cache: 'no-store' })
+        .then((x) => x.json()).catch(() => ({ ok: false, error: 'Servidor no disponible' }));
+      if (!r.ok) return uiAlert(r.error || 'No se pudo contar', 'Contar caracteres');
+      const fmt = (n) => (n === undefined ? '—' : n.toLocaleString('es'));
+      const wrap = document.createElement('div');
+      wrap.className = 'stats';
+      const table = document.createElement('table');
+      table.innerHTML = '<thead><tr><th></th><th>Caracteres</th><th>Sin espacios</th><th title="Letras y dígitos del contenido, sin contar las marcas de formato de Markdown y LaTeX">Letras y dígitos</th><th>Palabras</th><th>Líneas</th><th title="Letras y dígitos respecto al PDF original">Conservado</th></tr></thead>';
+      const body = document.createElement('tbody');
+      r.rows.forEach((row) => {
+        const tr = document.createElement('tr');
+        if (row.key === 'pdf') tr.className = 'orig';
+        const cells = row.blocked
+          ? [row.label, 'bloqueado por el antivirus']
+          : [row.label, fmt(row.chars), fmt(row.nospace), fmt(row.alnum), fmt(row.words), fmt(row.lines), row.kept === undefined ? '' : row.kept + ' %'];
+        cells.forEach((text, i) => {
+          const td = document.createElement('td');
+          td.textContent = text;
+          if (row.blocked && i === 1) td.colSpan = 6;
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+      table.appendChild(body);
+      const note = document.createElement('p');
+      note.className = 'stats-note';
+      note.textContent = `${r.pages} páginas` + (r.flagged ? ` · ${r.flagged} se muestran como imagen (texto ilegible u omitido), por eso no cuentan como texto` : '') +
+        '. «Letras y dígitos» no cuenta las marcas de formato de Markdown y LaTeX. Es menor que el original porque se quitan pies de página repetidos, diapositivas duplicadas y texto roto.';
+      wrap.append(table, note);
+      uiShow('Caracteres · ' + prettyName(file.name), wrap);
+    }
+
     function createItem(file) {
       const kind = file.kind || 'pdf';
       const item = document.createElement('article');
@@ -692,6 +735,7 @@
         link.addEventListener('click', (event) => { event.preventDefault(); openView(file, item, 'pdf'); });
         tools.appendChild(actionButton('✎', 'Renombrar', () => renameFile(file, item)));
         tools.appendChild(actionButton('↻', 'Rehacer la extracción de texto e imágenes', () => extractFile(file)));
+        tools.appendChild(actionButton('📊', 'Contar caracteres: PDF original, texto, Markdown y LaTeX', () => showStats(file)));
 
         const views = document.createElement('div');
         views.className = 'card-views';

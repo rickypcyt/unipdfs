@@ -14,6 +14,7 @@ anteriores de texto.md / texto.tex / texto.pdf se guardan en la subcarpeta `ante
 import hashlib
 import json
 import os
+import re
 import shutil
 import threading
 import time
@@ -306,6 +307,65 @@ def ensure(pdf, force=False):
             out.unlink()
         tmp.rename(out)
         return out, "extraída"
+
+
+def _plain_md(t):
+    """Markdown sin sus marcas (imágenes, comentarios, encabezados, viñetas) para poder comparar el contenido."""
+    t = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", t)
+    t = re.sub(r"<!--.*?-->", "", t, flags=re.S)
+    t = re.sub(r"<sub>.*?</sub>", "", t)
+    t = re.sub(r"(?m)^\*Nota:.*$", "", t)
+    t = re.sub(r"(?m)^\s*(#{1,6}\s+|[-*+]\s+)", "", t)
+    return t.replace("\\*", "*")
+
+
+def _plain_tex(t):
+    """LaTeX sin preámbulo, imágenes ni comandos: solo el texto."""
+    i = t.find("\\begin{document}")
+    if i >= 0:
+        t = t[i + len("\\begin{document}"):]
+    t = re.sub(r"\\begin\{center\}.*?\\end\{center\}", "", t, flags=re.S)
+    t = re.sub(r"\{\\footnotesize.*?\}\\par", "", t)
+    t = re.sub(r"(?m)^%.*$", "", t)
+    t = re.sub(r"\\item\[\{(.*?)\}\]", r"\1 ", t)
+    t = re.sub(r"\\[A-Za-z]+\*?", "", t)
+    return re.sub(r"[{}]", "", t)
+
+
+def _counts(text, plain=None):
+    plain = text if plain is None else plain
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    return {
+        "chars": len(text),
+        "nospace": sum(1 for c in text if not c.isspace()),
+        "alnum": sum(1 for c in plain if c.isalnum()),  # letras y dígitos del contenido, sin marcas de formato
+        "words": len(text.split()),
+        "lines": len(lines),
+    }
+
+
+def text_stats(pdf):
+    """Cuenta caracteres, palabras y líneas del PDF original y de cada archivo extraído."""
+    if pymupdf is None:
+        raise RuntimeError("PyMuPDF no está disponible en este Python")
+    out, _ = ensure(pdf)
+    with PDF_LOCK, pymupdf.open(str(pdf)) as doc:
+        original = "\n".join(page.get_text() for page in doc)
+        pages = doc.page_count
+    rows = [{"key": "pdf", "label": "PDF original (texto crudo)", **_counts(original)}]
+    for key, label in (("texto.txt", "texto.txt"), ("texto.md", "texto.md (Markdown)"), ("texto.tex", "texto.tex (LaTeX)")):
+        try:
+            text = (out / key).read_text(encoding="utf-8")
+            plain = _plain_md(text) if key == "texto.md" else _plain_tex(text) if key == "texto.tex" else text
+            rows.append({"key": key, "label": label, **_counts(text, plain)})
+        except OSError:
+            rows.append({"key": key, "label": label, "blocked": True})
+    base = rows[0]["alnum"] or 1
+    for row in rows[1:]:
+        if "alnum" in row:
+            row["kept"] = round(100 * row["alnum"] / base, 1)
+    marker = _read_marker(out) or {}
+    return {"rows": rows, "pages": pages, "flagged": marker.get("garbled") or 0}
 
 
 MAX_WORKERS = 4  # PDF extraídos a la vez

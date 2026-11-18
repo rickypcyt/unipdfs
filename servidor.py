@@ -317,6 +317,18 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"ok": False, "error": str(exc)}, 500)
             return
 
+        if path == "/api/stats":
+            query = parse_qs(urlparse(self.path).query)
+            pdf, error = self._resolve_pdf(query.get("path", [""])[0].strip())
+            if error:
+                self._json({"ok": False, "error": error}, 404)
+                return
+            try:
+                self._json({"ok": True, **extractor.text_stats(pdf)})
+            except Exception as exc:
+                self._json({"ok": False, "error": str(exc)}, 500)
+            return
+
         if path == "/api/extract-status":
             self._json(extractor.status())
             return

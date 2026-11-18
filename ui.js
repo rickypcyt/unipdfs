@@ -55,6 +55,32 @@
     });
   }
 
+  // Modal con contenido propio (un nodo del DOM), p. ej. una tabla
+  window.uiShow = (title, node, okText = 'Cerrar') => new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'ui-backdrop';
+    const box = document.createElement('div');
+    box.className = 'ui-modal';
+    box.style.width = 'min(680px,94vw)';
+    const h = document.createElement('h3');
+    h.textContent = title;
+    const actions = document.createElement('div');
+    actions.className = 'ui-actions';
+    const ok = document.createElement('button');
+    ok.className = 'ui-ok';
+    ok.textContent = okText;
+    actions.appendChild(ok);
+    box.append(h, node, actions);
+    back.appendChild(box);
+    const done = () => { back.remove(); document.removeEventListener('keydown', onKey, true); resolve(); };
+    const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.stopPropagation(); done(); } };
+    ok.onclick = done;
+    back.addEventListener('mousedown', (e) => { if (e.target === back) done(); });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(back);
+    ok.focus();
+  });
+
   window.uiAlert = (message, title = 'Aviso') => modal({ title, message, cancel: false });
   window.uiConfirm = (message, opts = {}) => modal({ title: opts.title || 'Confirmar', message, okText: opts.okText || 'Aceptar', danger: opts.danger });
   window.uiPrompt = (title, value = '', message = '') => modal({ title, message, input: true, value, okText: 'Guardar' });
