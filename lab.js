@@ -31,6 +31,7 @@
     try { return JSON.parse(t); }
     catch (e) { return { ok: false, error: 'Servidor antiguo: cierra iniciar.bat y vuelve a ejecutarlo' }; }
   };
+  const showPdf = (url) => { const f = $('labPreview'); f.removeAttribute('srcdoc'); f.src = url; };
   const isMd = () => cur && cur.toLowerCase().endsWith('.md');
   const pdfSrc = (p, m) => '/files/' + p.split('/').map(encodeURIComponent).join('/') + '?v=' + (m || Date.now()) + '#view=FitH';
 
@@ -67,7 +68,18 @@
     await refreshList(path);
     showPane();
     if (isMd()) renderMd();
-    else $('labPreview').src = pdfSrc(path.replace(/\.tex$/i, '.pdf'));
+    else {
+      // Si el .tex aún no tiene PDF, no se carga (daría 404): se avisa y se compila solo.
+      const pdf = path.replace(/\.tex$/i, '.pdf');
+      const head = await fetch(pdfSrc(pdf).split('#')[0], { method: 'HEAD', cache: 'no-store' }).catch(() => null);
+      if (head && head.ok) showPdf(pdfSrc(pdf));
+      else {
+        $('labPreview').srcdoc = '<p style="font:15px Segoe UI,Arial,sans-serif;color:#667085;padding:24px">Generando el PDF por primera vez…</p>';
+        say(path);
+        compile();
+        return;
+      }
+    }
     say(path);
   }
 
@@ -88,7 +100,7 @@
       dirty = false;
       logEl.textContent = d.log || '';
       logEl.style.display = d.ok ? 'none' : 'block';
-      if (d.ok) { lastPdf = d.pdf; $('labPreview').src = pdfSrc(d.pdf, d.mtime); say('Compilado ' + new Date().toLocaleTimeString()); }
+      if (d.ok) { lastPdf = d.pdf; showPdf(pdfSrc(d.pdf, d.mtime)); say('Compilado ' + new Date().toLocaleTimeString()); }
       else say('Error de compilación (ver registro)', true);
     } catch (e) { say(String(e), true); }
     $('labCompile').disabled = false;

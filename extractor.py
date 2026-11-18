@@ -25,6 +25,11 @@ import limpieza
 # Sube este número cuando cambie el formato de salida: las extracciones viejas se rehacen solas.
 FORMAT = 3
 MARKER = ".fuente.json"
+OUTPUTS = ("texto.txt", "texto.md", "texto.tex")
+
+
+class BlockedError(RuntimeError):
+    """Los archivos extraídos desaparecen tras crearlos (antivirus u otro programa)."""
 SUFFIX = "_extraido"
 SCAN_EVERY = 5  # segundos entre revisiones de la carpeta
 
@@ -79,7 +84,7 @@ def is_fresh(pdf):
     """Comprobación rápida (sin leer el PDF): ¿la extracción corresponde a este archivo?"""
     out = output_dir(pdf)
     m = _read_marker(out)
-    if not m or m.get("format") != FORMAT or not (out / "texto.tex").exists():
+    if not m or m.get("format") != FORMAT or not all((out / name).exists() for name in OUTPUTS):
         return False
     try:
         st = pdf.stat()
@@ -154,13 +159,19 @@ def ensure(pdf, force=False):
             return out, "al día"
 
         marker = _read_marker(out)
-        # Solo se reutiliza una extracción que ya tenga el formato actual.
-        has_text = (out / "texto.tex").exists() and bool(marker) and marker.get("format") == FORMAT
 
         digest = _sha1(pdf)
-        if not force and has_text and marker.get("sha1") == digest:
+        same_version = bool(marker) and marker.get("sha1") == digest and marker.get("format") == FORMAT
+        missing = [name for name in OUTPUTS if not (out / name).exists()]
+        if not force and same_version and not missing:
             _write_marker(out, pdf, digest, marker.get("pages"), marker.get("images"))
             return out, "mismo contenido"
+        if not force and same_version and missing:
+            # Ya se extrajo este mismo contenido y alguien ha borrado archivos (p. ej. Windows Defender
+            # con un falso positivo). Re-extraer volvería a pasar lo mismo en bucle: se para aquí.
+            raise BlockedError(
+                "Windows (probablemente Defender) ha borrado " + ", ".join(missing)
+                + ". Pulsa ↻ en la tarjeta para intentarlo de nuevo.")
 
         if not force and not out.exists():
             # ¿Se renombró el PDF? Busca una extracción huérfana con el mismo contenido.

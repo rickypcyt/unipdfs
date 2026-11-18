@@ -88,7 +88,14 @@ def extract_pdf_to_folder(pdf_path, force=False):
 
 
 def ensure_extraction(pdf_path):
-    return extractor.ensure(pdf_path)[0]
+    try:
+        return extractor.ensure(pdf_path)[0]
+    except extractor.BlockedError:
+        # Se muestra lo que quede (las vistas avisan si falta un archivo).
+        out = extractor.output_dir(pdf_path)
+        if out.is_dir():
+            return out
+        raise
 
 
 def static_url(rel_path):
@@ -97,7 +104,13 @@ def static_url(rel_path):
 
 def build_preview_html(pdf_path, output_dir):
     """Página con el Markdown limpio de la extracción, renderizado y con sus imágenes."""
-    md = (output_dir / "texto.md").read_text(encoding="utf-8")
+    try:
+        md = (output_dir / "texto.md").read_text(encoding="utf-8")
+    except OSError as exc:
+        md = ("# No se puede abrir texto.md\n\nWindows no deja leer este archivo ("
+              + (exc.strerror or str(exc)) + "). Suele ser **Windows Defender** marcándolo por error. "
+              "Revisa *Seguridad de Windows → Protección contra virus → Historial de protección* "
+              "o pulsa ↻ en la tarjeta para regenerarlo.\n")
     base_url = static_url(output_dir.relative_to(source_root()).as_posix()) + "/"
     md = md.replace("](imagenes/", "](" + base_url + "imagenes/")
     payload = json.dumps(md, ensure_ascii=False).replace("</", "<\\/")
@@ -140,8 +153,22 @@ def build_preview_html(pdf_path, output_dir):
 
 def build_text_html(pdf_path, output_dir):
     """Página para leer texto.txt cómodamente (texto plano con buena tipografía)."""
-    text = (output_dir / "texto.txt").read_text(encoding="utf-8")
     raw_url = static_url((output_dir / "texto.txt").relative_to(source_root()).as_posix())
+    try:
+        text = (output_dir / "texto.txt").read_text(encoding="utf-8")
+    except OSError as exc:
+        # Windows Defender a veces bloquea texto.txt (falso positivo con apuntes que citan código de ataques).
+        md_url = "/api/preview?path=" + quote(pdf_path.relative_to(source_root()).as_posix())
+        return f"""<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Texto no disponible</title>
+<style>body {{ margin: 0; padding: 40px 16px; background: #eef1f5; font: 15px/1.6 Inter, Segoe UI, Arial, sans-serif; color: #1f2937; }}
+.box {{ max-width: 640px; margin: 0 auto; padding: 24px 28px; background: #fff; border-radius: 10px; box-shadow: 0 4px 18px rgba(16,24,40,.10); }}
+a {{ color: #155eef; font-weight: 700; }} code {{ background: #f2f4f7; padding: 1px 5px; border-radius: 4px; }}</style></head>
+<body><div class="box"><h2>No se puede abrir texto.txt</h2>
+<p>Windows no deja leer este archivo ({html.escape(exc.strerror or str(exc))}). Suele pasar cuando
+<b>Windows Defender</b> lo marca por error como sospechoso, por ejemplo en temas que citan código de ataques web.</p>
+<p>El mismo contenido está en <a href="{html.escape(md_url, quote=True)}">la vista Markdown</a>.</p>
+<p>Si quieres el .txt, revisa <i>Seguridad de Windows → Protección contra virus → Historial de protección</i>.</p>
+</div></body></html>"""
     return f"""<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.escape(pdf_path.stem)} · texto</title>
 <style>
