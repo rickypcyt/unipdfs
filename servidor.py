@@ -38,7 +38,7 @@ PORT = 8000
 
 def code_version():
     """Marca de la versión del código en disco (para avisar si el servidor está desactualizado)."""
-    return max(int((ROOT / name).stat().st_mtime) for name in ("servidor.py", "latex_api.py", "config.py", "extractor.py"))
+    return max(int((ROOT / name).stat().st_mtime) for name in ("servidor.py", "latex_api.py", "config.py", "extractor.py", "limpieza.py"))
 
 
 STARTED_CODE = code_version()
@@ -96,64 +96,46 @@ def static_url(rel_path):
 
 
 def build_preview_html(pdf_path, output_dir):
-    content = (output_dir / "texto.txt").read_text(encoding="utf-8")
-    page_map = {}
-    for match in re.finditer(r"--- Página (\d+) ---\n(.*?)(?=--- Página \d+ ---|\Z)", content, re.S):
-        number = int(match.group(1))
-        page_map[number] = {"number": number, "text": match.group(2).strip(), "images": []}
-
-    images_dir = output_dir / "imagenes"
-    if images_dir.is_dir():
-        for image_path in sorted(images_dir.iterdir()):
-            if not image_path.is_file():
-                continue
-            match = re.search(r"_p(\d+)\.[^.]+$", image_path.name)
-            number = int(match.group(1)) if match else 1
-            if number not in page_map:
-                page_map[number] = {"number": number, "text": "", "images": []}
-            page_map[number]["images"].append(image_path)
-
-    pages = [page_map[key] for key in sorted(page_map)]
-
-    css = """
-    <style>
-      body { margin: 0; padding: 24px 16px 60px; background: #eef1f5; }
-      header { max-width: 820px; margin: 0 auto 8px; }
-      h1 { margin: 0 0 6px; font-size: 24px; }
-      .meta { margin: 0 0 24px; color: #667085; font-size: 14px; }
-      .meta a { color: #155eef; }
-      .page { max-width: 820px; margin: 28px auto; padding: 42px 48px; background: #fff; box-shadow: 0 4px 18px rgba(16,24,40,.10); font-family: Georgia, 'Times New Roman', serif; color: #1f2937; line-height: 1.65; }
-      .page h2 { margin: 0 0 14px; color: #667085; font-size: 14px; font-family: Inter, Segoe UI, Arial, sans-serif; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-      .text { white-space: pre-wrap; word-break: break-word; }
-      .images { margin-top: 18px; }
-      .images img { display: block; max-width: 100%; height: auto; margin: 12px auto; border: 1px solid #e5e7eb; }
-    </style>
-    """
-
-    body = []
-    for page in pages:
-        images = []
-        for index, image_path in enumerate(page["images"], start=1):
-            rel = (output_dir / "imagenes" / image_path.name).relative_to(source_root()).as_posix()
-            src = static_url(rel)
-            images.append(f'<img src="{html.escape(src, quote=True)}" alt="Imagen {index} de la página {page["number"]}">')
-        body.append(
-            f'<section class="page"><h2>Página {page["number"]}</h2>'
-            f'<div class="text">{html.escape(page["text"])}</div>'
-            f'<div class="images">{"".join(images)}</div></section>'
-        )
-
+    """Página con el Markdown limpio de la extracción, renderizado y con sus imágenes."""
+    md = (output_dir / "texto.md").read_text(encoding="utf-8")
+    base_url = static_url(output_dir.relative_to(source_root()).as_posix()) + "/"
+    md = md.replace("](imagenes/", "](" + base_url + "imagenes/")
+    payload = json.dumps(md, ensure_ascii=False).replace("</", "<\\/")
     pdf_url = static_url(pdf_path.relative_to(source_root()).as_posix()) + "#page=1"
-    return (
-        '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f'<title>{html.escape(pdf_path.stem)}</title>{css}</head><body>'
-        f'<header><h1>{html.escape(pdf_path.stem)}</h1>'
-        f'<p class="meta">{len(pages)} páginas · {sum(len(page["images"]) for page in pages)} imágenes · '
-        f'<a href="/">Volver al índice</a> · <a href="{html.escape(pdf_url, quote=True)}">Abrir PDF</a></p></header>'
-        + "".join(body)
-        + '</body></html>'
-    )
+    title = html.escape(pdf_path.stem)
+    return f"""<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>
+  :root {{ color-scheme: light; }}
+  body {{ margin: 0; padding: 24px 16px 80px; background: #eef1f5; color: #1f2937;
+         font: 16px/1.65 Georgia, 'Times New Roman', serif; }}
+  .meta {{ max-width: 820px; margin: 0 auto 12px; color: #667085; font: 13px Inter, Segoe UI, Arial, sans-serif; }}
+  .meta a {{ color: #155eef; }}
+  article {{ max-width: 820px; margin: 0 auto; padding: 40px 48px; background: #fff;
+            box-shadow: 0 4px 18px rgba(16,24,40,.10); border-radius: 4px; }}
+  h1 {{ margin: 0 0 8px; font: 800 26px/1.25 Inter, Segoe UI, Arial, sans-serif; }}
+  h2 {{ margin: 34px 0 2px; padding-top: 18px; border-top: 1px solid #eaecf0;
+        font: 700 19px/1.3 Inter, Segoe UI, Arial, sans-serif; color: #101828; }}
+  h1 + h2 {{ border-top: 0; }}
+  sub {{ display: block; margin-bottom: 10px; color: #98a2b3; font: 12px Inter, Segoe UI, Arial, sans-serif; }}
+  ul, ol {{ padding-left: 1.4em; }}
+  li {{ margin: 3px 0; }}
+  img {{ display: block; max-width: 100%; height: auto; margin: 14px auto; border: 1px solid #e5e7eb; border-radius: 4px; }}
+  code {{ font-size: 14px; background: #f2f4f7; padding: 1px 4px; border-radius: 4px; }}
+  em {{ color: #98a2b3; }}
+  @media (max-width: 640px) {{ article {{ padding: 24px 18px; }} }}
+</style></head><body>
+<p class="meta"><a href="{html.escape(pdf_url, quote=True)}">Abrir PDF original</a> · texto limpio generado automáticamente</p>
+<article id="doc"></article>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script>
+  const md = {payload};
+  const doc = document.getElementById('doc');
+  if (window.marked) doc.innerHTML = marked.parse(md);
+  else {{ const pre = document.createElement('pre'); pre.style.whiteSpace = 'pre-wrap'; pre.textContent = md; doc.appendChild(pre); }}
+</script>
+</body></html>"""
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -336,7 +318,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"ok": True, "path": md_path.relative_to(source_root()).as_posix(), "content": md})
             elif path == "/api/md-to-tex":
                 md_file = latex_api.resolve(rel, {".md"})
-                tex = latex_api.markdown_to_latex(data.get("content") or md_file.read_text(encoding="utf-8"))
+                tex = latex_api.markdown_to_latex(data.get("content") or md_file.read_text(encoding="utf-8"), md_file.parent)
                 tex_path = md_file.with_name(md_file.stem + "_final.tex")
                 tex_path.write_text(tex, encoding="utf-8")
                 self._json({"ok": True, "path": tex_path.relative_to(source_root()).as_posix()})

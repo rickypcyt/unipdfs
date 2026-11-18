@@ -20,7 +20,10 @@ except Exception:
     pymupdf = None
 
 import config
+import limpieza
 
+# Sube este número cuando cambie el formato de salida: las extracciones viejas se rehacen solas.
+FORMAT = 2
 MARKER = ".fuente.json"
 SUFFIX = "_extraido"
 SCAN_EVERY = 5  # segundos entre revisiones de la carpeta
@@ -60,7 +63,7 @@ def _write_marker(folder, pdf, sha1, pages, images):
     st = pdf.stat()
     (folder / MARKER).write_text(json.dumps({
         "pdf": pdf.name, "size": st.st_size, "mtime_ns": st.st_mtime_ns,
-        "sha1": sha1, "pages": pages, "images": images,
+        "sha1": sha1, "pages": pages, "images": images, "format": FORMAT,
     }, ensure_ascii=False), encoding="utf-8")
 
 
@@ -76,7 +79,7 @@ def is_fresh(pdf):
     """Comprobación rápida (sin leer el PDF): ¿la extracción corresponde a este archivo?"""
     out = output_dir(pdf)
     m = _read_marker(out)
-    if not m or not (out / "texto.txt").exists():
+    if not m or m.get("format") != FORMAT or not (out / "texto.md").exists():
         return False
     try:
         st = pdf.stat()
@@ -100,16 +103,22 @@ def _extract(pdf, dest):
     images_dir = tmp / "imagenes"
     images_dir.mkdir(parents=True)
 
-    text_parts, seen, count = [], set(), 0
+    seen, count, by_page = set(), 0, {}
     doc = pymupdf.open(str(pdf))
     try:
+        pages = limpieza.analyze(doc)
+        # Imágenes decorativas: logos/franjas que salen en muchas páginas, o viñetas diminutas.
+        uses = {}
+        for page in doc:
+            for info in page.get_images(full=True):
+                uses.setdefault(info[0], set()).add(page.number)
+        decorative = {x for x, ps in uses.items() if len(ps) >= max(3, 0.3 * len(doc))}
         for index in range(len(doc)):
             page = doc.load_page(index)
             number = index + 1
-            text_parts.append(f"--- Página {number} ---\n{page.get_text('text')}\n")
             for info in page.get_images(full=True):
-                xref = info[0]
-                if xref in seen:
+                xref, width, height = info[0], info[2], info[3]
+                if xref in seen or xref in decorative or min(width, height) < 48:
                     continue
                 seen.add(xref)
                 try:
@@ -121,12 +130,16 @@ def _extract(pdf, dest):
                     continue
                 count += 1
                 ext = image.get("ext") or "png"
-                (images_dir / f"img_{count:03d}_p{number}.{ext}").write_bytes(data)
+                name = f"img_{count:03d}_p{number}.{ext}"
+                (images_dir / name).write_bytes(data)
+                by_page.setdefault(number, []).append("imagenes/" + name)
     finally:
         doc.close()
 
-    (tmp / "texto.txt").write_text("\n".join(text_parts), encoding="utf-8")
-    return tmp, len(text_parts), count
+    (tmp / "texto.txt").write_text(limpieza.to_text(pages), encoding="utf-8")
+    (tmp / "texto.md").write_text(limpieza.to_markdown(pages, limpieza.pretty_title(pdf.stem), by_page),
+                                  encoding="utf-8")
+    return tmp, len(pages), count
 
 
 def ensure(pdf, force=False):
@@ -138,16 +151,11 @@ def ensure(pdf, force=False):
             return out, "al día"
 
         marker = _read_marker(out)
-        has_text = (out / "texto.txt").exists()
-
-        if not force and has_text and marker is None:
-            # Extracción hecha antes de existir el registro: se adopta si es más nueva que el PDF.
-            if (out / "texto.txt").stat().st_mtime >= pdf.stat().st_mtime:
-                _write_marker(out, pdf, _sha1(pdf), None, None)
-                return out, "adoptada"
+        # Solo se reutiliza una extracción que ya tenga el formato actual.
+        has_text = (out / "texto.md").exists() and bool(marker) and marker.get("format") == FORMAT
 
         digest = _sha1(pdf)
-        if not force and has_text and marker and marker.get("sha1") == digest:
+        if not force and has_text and marker.get("sha1") == digest:
             _write_marker(out, pdf, digest, marker.get("pages"), marker.get("images"))
             return out, "mismo contenido"
 
@@ -155,7 +163,7 @@ def ensure(pdf, force=False):
             # ¿Se renombró el PDF? Busca una extracción huérfana con el mismo contenido.
             for cand in pdf.parent.glob("*" + SUFFIX):
                 m = _read_marker(cand)
-                if (cand.is_dir() and m and m.get("sha1") == digest
+                if (cand.is_dir() and m and m.get("sha1") == digest and m.get("format") == FORMAT
                         and not (pdf.parent / m.get("pdf", "")).exists()):
                     cand.rename(out)
                     _write_marker(out, pdf, digest, m.get("pages"), m.get("images"))

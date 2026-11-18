@@ -125,64 +125,18 @@ def compile_tex(rel):
 # ---------- PDF -> Markdown ----------
 
 def pdf_to_markdown(pdf_path):
+    """Markdown limpio (sin pies repetidos, viñetas reconstruidas). Usa la misma limpieza que la extracción."""
     if pymupdf is None:
         raise RuntimeError("PyMuPDF no está disponible")
-    doc = pymupdf.open(str(pdf_path))
-    try:
-        sizes = {}
-        for page in doc:
-            for b in page.get_text("dict")["blocks"]:
-                for l in b.get("lines", []):
-                    for s in l["spans"]:
-                        n = len(s["text"].strip())
-                        if n:
-                            k = round(s["size"])
-                            sizes[k] = sizes.get(k, 0) + n
-        body = max(sizes, key=sizes.get) if sizes else 11
-        heads = sorted([k for k in sizes if k >= body + 2], reverse=True)[:3]
-
-        out = []
-        for i, page in enumerate(doc, 1):
-            out.append(f"\n<!-- página {i} -->\n")
-            for b in page.get_text("dict")["blocks"]:
-                if b.get("type") != 0:
-                    continue
-                lines = []
-                for l in b["lines"]:
-                    text = ""
-                    for s in l["spans"]:
-                        t = s["text"]
-                        if not t.strip():
-                            text += t
-                            continue
-                        mono = "mono" in s["font"].lower() or "courier" in s["font"].lower()
-                        bold = bool(s["flags"] & 16)
-                        ital = bool(s["flags"] & 2)
-                        if mono:
-                            t = f"`{t.strip()}` "
-                        elif bold and ital:
-                            t = f"***{t.strip()}*** "
-                        elif bold:
-                            t = f"**{t.strip()}** "
-                        elif ital:
-                            t = f"*{t.strip()}* "
-                        text += t
-                    lines.append(text.strip())
-                para = " ".join(x for x in lines if x)
-                para = para.replace("** **", " ").replace("`  `", " ")
-                if not para:
-                    continue
-                size = round(max(s["size"] for l in b["lines"] for s in l["spans"]))
-                if size in heads and len(para) < 160:
-                    level = heads.index(size) + 1
-                    out.append("#" * level + " " + para.replace("**", "") + "\n")
-                elif re.match(r"^[•●▪◦\-–]\s+", para):
-                    out.append("- " + re.sub(r"^[•●▪◦\-–]\s+", "", para))
-                else:
-                    out.append(para + "\n")
-        return "\n".join(out).strip() + "\n"
-    finally:
-        doc.close()
+    import extractor
+    import limpieza
+    with extractor.PDF_LOCK:
+        doc = pymupdf.open(str(pdf_path))
+        try:
+            pages = limpieza.analyze(doc)
+        finally:
+            doc.close()
+    return limpieza.to_markdown(pages, limpieza.pretty_title(Path(pdf_path).stem))
 
 
 # ---------- Markdown -> LaTeX ----------
@@ -196,6 +150,7 @@ def _esc(t):
 
 
 def _inline(t):
+    t = t.replace("\\*", "\x00")  # asterisco escapado en Markdown = asterisco literal
     parts = re.split(r"(`[^`]+`)", t)
     res = []
     for part in parts:
@@ -206,24 +161,42 @@ def _inline(t):
         s = re.sub(r"\*\*\*(.+?)\*\*\*", r"\\textbf{\\emph{\1}}", s)
         s = re.sub(r"\*\*(.+?)\*\*", r"\\textbf{\1}", s)
         s = re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"\\emph{\1}", s)
+        s = s.replace("→", r"$\rightarrow$")
         res.append(s)
-    return "".join(res)
+    return "".join(res).replace("\x00", "*")
 
 
-def markdown_to_latex(md):
+_HEAD = re.compile(r"^(#{1,6})\s+(.*)")
+_ITEM = re.compile(r"^(\s*)([-*+]|\d+[.)])\s+(.*)")
+_IMG = re.compile(r"^\s*!\[[^\]]*\]\(([^)\s]+)\)\s*$")
+_PAGE = re.compile(r"^\s*<sub>\s*(.*?)\s*</sub>\s*$")
+
+
+def markdown_to_latex(md, base_dir=None):
+    """Markdown -> documento LaTeX. `base_dir` sirve para comprobar que las imágenes existen."""
     lines = md.splitlines()
-    out, i, in_list = [], 0, None
 
-    def close_list():
-        nonlocal in_list
-        if in_list:
-            out.append(r"\end{%s}" % in_list)
-            in_list = None
+    # El primer "# Título" es el título del documento; el resto de niveles se reajusta
+    # para que el encabezado más alto que quede sea \section.
+    title = ""
+    first = next((ln for ln in lines if ln.strip()), "")
+    if (m := _HEAD.match(first)) and len(m.group(1)) == 1:
+        title = m.group(2).strip()
+        lines.remove(first)
+    levels = [len(m.group(1)) for ln in lines if (m := _HEAD.match(ln))]
+    shift = (min(levels) - 1) if levels else 0
+    cmds = ["section", "subsection", "subsubsection", "paragraph", "subparagraph", "subparagraph"]
+
+    out, stack, i = [], [], 0  # stack: [(entorno, sangría)]
+
+    def close_lists(indent=-1):
+        while stack and stack[-1][1] > indent:
+            out.append("  " * (len(stack) - 1) + r"\end{%s}" % stack.pop()[0])
 
     while i < len(lines):
         ln = lines[i]
         if ln.strip().startswith("```"):
-            close_list()
+            close_lists()
             i += 1
             code = []
             while i < len(lines) and not lines[i].strip().startswith("```"):
@@ -231,31 +204,50 @@ def markdown_to_latex(md):
                 i += 1
             out += [r"\begin{lstlisting}", *code, r"\end{lstlisting}"]
         elif re.match(r"^\s*<!--.*-->\s*$", ln):
-            close_list()
+            close_lists()
             out.append("%" + ln.strip()[4:-3])
-        elif (m := re.match(r"^(#{1,4})\s+(.*)", ln)):
-            close_list()
-            cmd = ["section", "subsection", "subsubsection", "paragraph"][len(m.group(1)) - 1]
-            out += ["", r"\%s{%s}" % (cmd, _inline(m.group(2).strip()))]
-        elif (m := re.match(r"^\s*[-*+]\s+(.*)", ln)):
-            if in_list != "itemize":
-                close_list()
-                out.append(r"\begin{itemize}")
-                in_list = "itemize"
-            out.append(r"  \item " + _inline(m.group(1)))
-        elif (m := re.match(r"^\s*\d+[.)]\s+(.*)", ln)):
-            if in_list != "enumerate":
-                close_list()
-                out.append(r"\begin{enumerate}")
-                in_list = "enumerate"
-            out.append(r"  \item " + _inline(m.group(1)))
+        elif (m := _PAGE.match(ln)):
+            close_lists()
+            out.append(r"{\footnotesize\color{gray}" + _inline(m.group(1)).replace("p. ", "p.~") + r"}\par")
+        elif (m := _IMG.match(ln)):
+            close_lists()
+            src = m.group(1)
+            ok = not src.startswith(("http:", "https:")) and " " not in src and (
+                base_dir is None or (Path(base_dir) / src).exists())
+            if ok:
+                out += [r"\begin{center}",
+                        r"\includegraphics[width=0.85\linewidth,height=0.42\textheight,keepaspectratio]{%s}" % src,
+                        r"\end{center}"]
+            else:
+                out.append("% imagen no incluida: " + src)
+        elif (m := _HEAD.match(ln)):
+            close_lists()
+            level = max(len(m.group(1)) - shift, 1)
+            out += ["", r"\%s*{%s}" % (cmds[level - 1], _inline(m.group(2).strip()))]
+        elif (m := _ITEM.match(ln)):
+            indent = len(m.group(1).replace("\t", "    "))
+            env = "enumerate" if m.group(2)[0].isdigit() else "itemize"
+            close_lists(indent)
+            if stack and stack[-1][1] == indent and stack[-1][0] != env:
+                out.append("  " * (len(stack) - 1) + r"\end{%s}" % stack.pop()[0])
+            if not stack or stack[-1][1] < indent:
+                out.append("  " * len(stack) + r"\begin{%s}" % env)
+                stack.append((env, indent))
+            # En listas numeradas se conserva el número original (2. no debe volver a ser 1.)
+            label = "[{%s}] " % m.group(2) if env == "enumerate" else " "
+            out.append("  " * len(stack) + r"\item" + label + _inline(m.group(3)))
         elif not ln.strip():
-            close_list()
+            if not (i + 1 < len(lines) and _ITEM.match(lines[i + 1]) and stack):
+                close_lists()
             out.append("")
         else:
-            close_list()
+            close_lists()
             out.append(_inline(ln))
         i += 1
-    close_list()
+    close_lists()
     body = "\n".join(out).strip()
-    return TEMPLATE.split(r"\begin{document}")[0] + "\\begin{document}\n\\maketitle\n\n" + body + "\n\n\\end{document}\n"
+    body = re.sub(r"\n{3,}", "\n\n", body)
+    pre = TEMPLATE.split(r"\begin{document}")[0]
+    if title:
+        pre = pre.replace(r"\title{Título}", r"\title{%s}" % _inline(title))
+    return pre + "\\begin{document}\n\\maketitle\n\n" + body + "\n\n\\end{document}\n"
