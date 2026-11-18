@@ -27,9 +27,14 @@ SKIP_DIRS = {"_herramientas", "_build"}
 
 TEMPLATE = r"""\documentclass[11pt,a4paper]{article}
 \usepackage[spanish,es-noshorthands]{babel}
-\usepackage{lmodern}
-\usepackage[T1]{fontenc}
-\usepackage[utf8]{inputenc}
+\usepackage{iftex}
+\ifXeTeX
+  \usepackage{fontspec}          % Tectonic usa XeTeX: Unicode nativo (¿ ¡ º ñ salen bien)
+\else
+  \usepackage[utf8]{inputenc}
+  \usepackage[T1]{fontenc}
+  \usepackage{lmodern}
+\fi
 \usepackage[margin=2.2cm]{geometry}
 \usepackage{amsmath,amssymb,graphicx,hyperref,listings,xcolor}
 \sloppy
@@ -136,6 +141,20 @@ def pdf_state(rel):
             "published": None if stale else publish_pdf(p)}
 
 
+def regenerate_tex(rel):
+    """Rehace texto.tex desde su texto.md con el estilo de apuntes. Guarda el anterior en anterior/."""
+    p = resolve(rel, {".tex"})
+    folder = p.parent
+    md = folder / "texto.md"
+    if p.name != "texto.tex" or not folder.name.endswith("_extraido") or not md.is_file():
+        raise ValueError("Solo se puede regenerar un texto.tex que venga de una extracción (con su texto.md)")
+    if p.exists():
+        (folder / "anterior").mkdir(exist_ok=True)
+        shutil.copy2(p, folder / "anterior" / "texto.tex")
+    p.write_text(markdown_to_latex(md.read_text(encoding="utf-8"), folder), encoding="utf-8")
+    return p.relative_to(src()).as_posix()
+
+
 def compile_tex(rel):
     p = resolve(rel, {".tex"})
     if not TECTONIC.exists():
@@ -204,36 +223,249 @@ def _inline(t):
         res.append(s)
     return "".join(res).replace("\x00", "*")
 
+# Preámbulo "apuntes": tipografía cuidada, cabecera con la sección, cajas, listados con color y macros
+# \diapo (referencia a la diapositiva en el margen) y \figura (imagen centrada con tamaño acotado).
+PRO_PREAMBLE = r"""\documentclass[11pt,a4paper]{article}
+
+% ---------------------------------------------------------------
+%  Idioma y tipografía
+% ---------------------------------------------------------------
+\usepackage{iftex}
+\ifXeTeX
+  \usepackage{fontspec}          % Tectonic usa XeTeX: Unicode nativo (¿ ¡ º ñ salen bien)
+\else
+  \usepackage[utf8]{inputenc}
+  \usepackage[T1]{fontenc}
+  \usepackage{lmodern}
+\fi
+\usepackage[spanish,es-noshorthands,es-tabla]{babel}
+\usepackage{microtype}
+\usepackage[spanish=spanish]{csquotes}
+
+% ---------------------------------------------------------------
+%  Página
+% ---------------------------------------------------------------
+\usepackage[margin=2.2cm,marginparwidth=1.6cm,marginparsep=3mm]{geometry}
+\usepackage{parskip}
+\usepackage{fancyhdr}
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small %%HEADER%%}
+\fancyhead[R]{\small\nouppercase{\leftmark}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---------------------------------------------------------------
+%  Paquetes
+% ---------------------------------------------------------------
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{booktabs,tabularx,array}
+\usepackage{float}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=4pt}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}   % siempre de los últimos
+\hypersetup{colorlinks=true,linkcolor=NavyBlue,urlcolor=NavyBlue}
+\urlstyle{tt}
+\sloppy
+
+\graphicspath{{imagenes/}}
+
+% ---------------------------------------------------------------
+%  Macros propias
+% ---------------------------------------------------------------
+% Referencia a la diapositiva original, en el margen
+\newcommand{\diapo}[1]{\marginpar{\raggedright\footnotesize\color{gray}diap.~#1}}
+
+% Imagen centrada con tamaño acotado
+\newcommand{\figura}[2]{%
+  \begin{center}
+    \includegraphics[width=0.85\linewidth,height=0.42\textheight,keepaspectratio]{#1}
+    \par\smallskip{\small\itshape #2}
+  \end{center}}
+
+% Cajas
+\newtcolorbox{definicion}[1][Definición]{
+  colback=NavyBlue!5, colframe=NavyBlue!70, fonttitle=\bfseries,
+  title=#1, enhanced, breakable, boxrule=0.6pt, arc=2pt}
+\newtcolorbox{nota}[1][Nota]{
+  colback=Goldenrod!8, colframe=Goldenrod!80!black, fonttitle=\bfseries,
+  title=#1, enhanced, breakable, boxrule=0.6pt, arc=2pt}
+\newtcolorbox{ejercicio}[1][Ejercicio propuesto]{
+  colback=ForestGreen!5, colframe=ForestGreen!70!black, fonttitle=\bfseries,
+  title=#1, enhanced, breakable, boxrule=0.6pt, arc=2pt}
+
+% ---------------------------------------------------------------
+%  Listados de código
+% ---------------------------------------------------------------
+\lstset{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  breakatwhitespace=false,
+  postbreak=\mbox{\textcolor{gray}{$\hookrightarrow$}\space},
+  frame=single,
+  rulecolor=\color{gray!50},
+  backgroundcolor=\color{gray!5},
+  framesep=4pt,
+  xleftmargin=6pt, xrightmargin=6pt,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{NavyBlue}\bfseries,
+  stringstyle=\color{BrickRed},
+  commentstyle=\color{ForestGreen}\itshape,
+  showstringspaces=false,
+  upquote=true,
+  extendedchars=true,
+  literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1
+           {ñ}{{\~n}}1 {Á}{{\'A}}1 {É}{{\'E}}1 {Í}{{\'I}}1 {Ó}{{\'O}}1 {Ú}{{\'U}}1
+           {Ñ}{{\~N}}1 {¿}{{?`}}1 {¡}{{!`}}1
+}
+\lstdefinelanguage{HTTP}{
+  morekeywords={GET,POST,HEAD,PUT,DELETE,TRACE,OPTIONS},
+  sensitive=true
+}
+\lstdefinelanguage{JSON}{
+  morestring=[b]",
+  literate=*{:}{{\textcolor{gray}{:}}}1 {,}{{\textcolor{gray}{,}}}1
+}
+\lstdefinelanguage{HTMLx}[]{HTML}{
+  morekeywords={meta,http-equiv,content}
+}
+
+% ---------------------------------------------------------------
+\title{\textbf{%%TITLE%%}}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\tableofcontents
+\clearpage
+"""
+
+_FOLD = {"→": "->", "←": "<-", "“": '"', "”": '"', "‘": "'", "’": "'", "–": "-", "—": "--", "…": "...",
+         "•": "*", " ": " ", "​": ""}
+_KEEP_CODE = set("áéíóúñÁÉÍÓÚÑ¿¡")
+
+
+def _safe_code(code):
+    """Código apto para listings: se cambian los caracteres que no sabe dibujar (se conservan las tildes)."""
+    import unicodedata
+    out = []
+    for ch in code:
+        ch = _FOLD.get(ch, ch)
+        for c in ch:
+            if ord(c) < 128 or c in _KEEP_CODE or c == "\n":
+                out.append(c)
+            else:
+                base = unicodedata.normalize("NFKD", c).encode("ascii", "ignore").decode()
+                out.append(base or "?")
+    return "".join(out)
+
+
+def _guess_lang(code):
+    """Lenguaje del listado, por el aspecto del código (HTTP, JSON, HTML o Java); None si no está claro."""
+    text = code.strip()
+    first = text.splitlines()[0] if text else ""
+    if re.match(r"^(GET|POST|HEAD|PUT|DELETE|TRACE|OPTIONS)\s+\S+\s+HTTP/\d", first) or re.match(r"^HTTP/\d", first):
+        return "HTTP"
+    if text[:1] in "{[" and re.search(r'"\s*:', text):
+        return "JSON"
+    if re.match(r"^<\s*[!A-Za-z/]", text):
+        return "HTMLx"
+    if re.search(r"\b(System\.out|new\s+\w+\s*\(|public\s+(static\s+)?(class|void)|import\s+java|PrintWriter|Socket)\b", text):
+        return "Java"
+    return None
+
 
 _HEAD = re.compile(r"^(#{1,6})\s+(.*)")
 _ITEM = re.compile(r"^(\s*)([-*+]|\d+[.)])\s+(.*)")
 _IMG = re.compile(r"^\s*!\[[^\]]*\]\(([^)\s]+)\)\s*$")
 _PAGE = re.compile(r"^\s*<sub>\s*(.*?)\s*</sub>\s*$")
+_NOTE = re.compile(r"^\*Nota:\s*(.*?)\*?\s*$")
+
+
+def _find_dividers(lines):
+    """Diapositivas "separador" (título + una sola frase corta): esa frase pasa a ser una sección."""
+    heads, in_fence = [], False
+    for i, ln in enumerate(lines):
+        if ln.strip().startswith("```"):
+            in_fence = not in_fence
+        elif not in_fence and re.match(r"^#{1,2}\s+", ln):
+            heads.append(i)
+    dividers = {}
+    for n, i in enumerate(heads):
+        if not lines[i].startswith("## "):
+            continue
+        end = heads[n + 1] if n + 1 < len(heads) else len(lines)
+        content = [(j, lines[j].strip()) for j in range(i + 1, end)
+                   if lines[j].strip() and not _PAGE.match(lines[j]) and not lines[j].strip().startswith("<!--")
+                   and not _NOTE.match(lines[j].strip())]
+        if len(content) == 1:
+            j, text = content[0]
+            plain = not (_ITEM.match(lines[j]) or _IMG.match(lines[j]) or text.startswith("```"))
+            if plain and len(text.split()) <= 8 and not text.endswith((".", ":")):
+                dividers[i] = (j, text)
+    return dividers
 
 
 def markdown_to_latex(md, base_dir=None):
-    """Markdown -> documento LaTeX. `base_dir` sirve para comprobar que las imágenes existen."""
+    """Markdown -> documento LaTeX con el estilo de apuntes. `base_dir` sirve para comprobar que las imágenes existen."""
     lines = md.splitlines()
 
-    # El primer "# Título" es el título del documento; el resto de niveles se reajusta
-    # para que el encabezado más alto que quede sea \section.
     title = ""
     first = next((ln for ln in lines if ln.strip()), "")
     if (m := _HEAD.match(first)) and len(m.group(1)) == 1:
         title = m.group(2).strip()
         lines.remove(first)
-    levels = [len(m.group(1)) for ln in lines if (m := _HEAD.match(ln))]
-    shift = (min(levels) - 1) if levels else 0
-    cmds = ["section", "subsection", "subsubsection", "paragraph", "subparagraph", "subparagraph"]
 
-    out, stack, i = [], [], 0  # stack: [(entorno, sangría)]
+    dividers = _find_dividers(lines)
+    hier = len(dividers) >= 2          # con varios separadores: separador = \section, diapositiva = \subsection
+    skip = {j for j, _ in dividers.values()}
+    sections = ["section", "subsection", "subsubsection", "paragraph", "subparagraph", "subparagraph"]
+
+    out, stack, i = [], [], 0          # stack: [(entorno, sangría)]
+    have_section, box_open, pending_box = False, False, None
 
     def close_lists(indent=-1):
         while stack and stack[-1][1] > indent:
             out.append("  " * (len(stack) - 1) + r"\end{%s}" % stack.pop()[0])
 
+    def close_box():
+        nonlocal box_open
+        if box_open:
+            out.append(r"\end{ejercicio}")
+            box_open = False
+
+    def heading(level, text, idx):
+        nonlocal have_section
+        close_lists()
+        close_box()
+        if idx in dividers:
+            cmd, text = "section", dividers[idx][1]
+        elif level == 1:
+            cmd = "section"
+        else:
+            cmd = sections[min((level - 2) + (1 if hier else 0), 5)]
+        if hier and cmd != "section" and not have_section:
+            out.extend(["", r"\section{Presentación}"])
+            have_section = True
+        if cmd == "section":
+            have_section = True
+        out.extend(["", r"\%s{%s}" % (cmd, _inline(text.strip()))])
+
     while i < len(lines):
         ln = lines[i]
+        if i in skip:
+            i += 1
+            continue
         if ln.strip().startswith("```"):
             close_lists()
             i += 1
@@ -241,28 +473,35 @@ def markdown_to_latex(md, base_dir=None):
             while i < len(lines) and not lines[i].strip().startswith("```"):
                 code.append(lines[i])
                 i += 1
-            out += [r"\begin{lstlisting}", *code, r"\end{lstlisting}"]
+            body = _safe_code("\n".join(code))
+            lang = _guess_lang(body)
+            out += [r"\begin{lstlisting}" + (f"[language={lang}]" if lang else ""), body, r"\end{lstlisting}"]
         elif re.match(r"^\s*<!--.*-->\s*$", ln):
             close_lists()
             out.append("%" + ln.strip()[4:-3])
         elif (m := _PAGE.match(ln)):
             close_lists()
-            out.append(r"{\footnotesize\color{gray}" + _inline(m.group(1)).replace("p. ", "p.~") + r"}\par")
+            num = re.sub(r"^p\.\s*", "", m.group(1)).replace("-", "--").replace("–", "--")
+            out.append(r"\diapo{%s}" % _esc(num))
+            # El cuadro de ejercicio se abre después de la referencia (un \marginpar no cabe dentro de una caja).
+            if pending_box:
+                out.append(pending_box)
+                box_open = True
+                pending_box = None
         elif (m := _IMG.match(ln)):
             close_lists()
             src = m.group(1)
             ok = not src.startswith(("http:", "https:")) and " " not in src and (
                 base_dir is None or (Path(base_dir) / src).exists())
             if ok:
-                out += [r"\begin{center}",
-                        r"\includegraphics[width=0.85\linewidth,height=0.42\textheight,keepaspectratio]{%s}" % src,
-                        r"\end{center}"]
+                out.append(r"\figura{%s}{}" % (src[len("imagenes/"):] if src.startswith("imagenes/") else src))
             else:
                 out.append("% imagen no incluida: " + src)
         elif (m := _HEAD.match(ln)):
-            close_lists()
-            level = max(len(m.group(1)) - shift, 1)
-            out += ["", r"\%s*{%s}" % (cmds[level - 1], _inline(m.group(2).strip()))]
+            level, text = len(m.group(1)), m.group(2)
+            heading(level, text, i)
+            if re.match(r"(?i)^ejercicio", text.strip()):
+                pending_box = r"\begin{ejercicio}[%s]" % _inline(text.strip())
         elif (m := _ITEM.match(ln)):
             indent = len(m.group(1).replace("\t", "    "))
             env = "enumerate" if m.group(2)[0].isdigit() else "itemize"
@@ -279,14 +518,21 @@ def markdown_to_latex(md, base_dir=None):
             if not (i + 1 < len(lines) and _ITEM.match(lines[i + 1]) and stack):
                 close_lists()
             out.append("")
+        elif (m := _NOTE.match(ln.strip())):
+            close_lists()
+            if m.group(1).lower().startswith(("parte del texto", "un fragmento")):
+                # Avisos automáticos de la extracción (texto ilegible / omitido): una línea discreta, no una caja
+                out.append(r"{\footnotesize\itshape\color{gray}" + _inline(m.group(1)) + r"}\par")
+            else:
+                out += [r"\begin{nota}[Aviso]", _inline(m.group(1)), r"\end{nota}"]
         else:
             close_lists()
             out.append(_inline(ln))
         i += 1
     close_lists()
-    body = "\n".join(out).strip()
-    body = re.sub(r"\n{3,}", "\n\n", body)
-    pre = TEMPLATE.split(r"\begin{document}")[0]
-    if title:
-        pre = pre.replace(r"\title{Título}", r"\title{%s}" % _inline(title))
-    return pre + "\\begin{document}\n\\maketitle\n\n" + body + "\n\n\\end{document}\n"
+    close_box()
+    body = re.sub(r"\n{3,}", "\n\n", "\n".join(out).strip())
+
+    pre = PRO_PREAMBLE.replace("%%HEADER%%", _esc((title or "Apuntes")[:70])) \
+                      .replace("%%TITLE%%", _inline(title) if title else "Apuntes")
+    return pre + "\n" + body + "\n\n\\end{document}\n"

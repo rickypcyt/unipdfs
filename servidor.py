@@ -397,6 +397,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"ok": True})
             elif path == "/api/tex-new":
                 self._json({"ok": True, "path": latex_api.new_tex(rel)})
+            elif path == "/api/tex-regen":
+                self._json({"ok": True, "path": latex_api.regenerate_tex(rel)})
             elif path == "/api/tex-compile":
                 if "content" in data:
                     latex_api.save_text(rel, data["content"])

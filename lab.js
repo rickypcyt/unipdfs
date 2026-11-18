@@ -34,6 +34,7 @@
           <div class="menu-list">
             <button class="menu-item" id="labToMd"><b>PDF → Markdown</b><span>Convierte el PDF abierto en el visor (o el último compilado) en un .md limpio.</span></button>
             <button class="menu-item" id="labToTex"><b>Markdown → LaTeX</b><span>Genera el .tex final desde el Markdown abierto.</span></button>
+            <button class="menu-item" id="labRegen"><b>Regenerar con el estilo de apuntes</b><span>Rehace este texto.tex desde su Markdown con la plantilla actual (secciones, código, figuras). La versión anterior se guarda en anterior/.</span></button>
           </div>
         </div>
         <a class="btn sec" id="labDownload" title="Descargar el PDF" download>${ICON.down}<span class="lbl">Descargar</span></a>
@@ -94,6 +95,7 @@
     $('labCompile').disabled = !!md || !cur || compiling;
     $('labSave').disabled = !cur;
     $('labToTex').disabled = !md;
+    $('labRegen').disabled = !(cur && /_extraido\/texto\.tex$/i.test(cur));
     const pdf = pdfOf();
     $('labDownload').style.pointerEvents = pdf ? '' : 'none';
     $('labDownload').style.opacity = pdf ? '' : '.45';
@@ -248,6 +250,18 @@
     const d = await api('/api/md-to-tex', { path: cur });
     if (!d.ok) return say(d.error, 'err');
     setDirty(false); await open(d.path); say('Generado ' + d.path.split('/').pop(), 'ok');
+  };
+
+  $('labRegen').onclick = async () => {
+    menu.classList.remove('open');
+    if (!cur || !/_extraido\/texto\.tex$/i.test(cur)) return;
+    if (dirty && !(await uiConfirm('Hay cambios sin guardar en este .tex; se sustituirán por la versión nueva (la actual se guarda en anterior/ solo si estaba guardada). ¿Continuar?', { title: 'Regenerar LaTeX', okText: 'Regenerar', danger: true }))) return;
+    say('Regenerando…', 'busy');
+    const d = await api('/api/tex-regen', { path: cur });
+    if (!d.ok) return say(d.error, 'err');
+    const path = cur;
+    setDirty(false); cur = null;               // fuerza a releer el archivo
+    await open(path);
   };
 
   $('labPrint').onclick = () => {
