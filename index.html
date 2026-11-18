@@ -104,6 +104,14 @@
 
     .extract-status { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: #eef4ff; color: #1849a9; font-size: 12px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .extract-status.warn { background: #fff8e6; color: #7a5b00; }
+    .extract-status.failed { white-space: normal; }
+    .extract-status ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .extract-status li { padding: 8px 10px; border: 1px solid #f5d78e; border-radius: 8px; background: #fffdf5; }
+    .fail-name { font-weight: 700; overflow-wrap: anywhere; }
+    .fail-where { color: #a07a00; font-size: 11px; }
+    .fail-why { margin: 4px 0 6px; color: #5c4500; overflow-wrap: anywhere; }
+    .extract-status li button { padding: 4px 10px; border: 1px solid #d9a400; border-radius: 6px; background: #fff; color: #7a5b00; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .extract-status li button:disabled { opacity: .6; cursor: default; }
 
     .pdf-list { display: grid; gap: 10px; }
     .folder-node { display: grid; gap: 8px; }
@@ -149,6 +157,7 @@
     .file-icon.tex { background: #ecfdf3; color: #027a48; }
     .badge { padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 700; }
     .badge.ok { background: #ecfdf3; color: #027a48; }
+    .badge.err { background: #fef3f2; color: #b42318; }
     .badge.wait { background: #f2f4f7; color: #667085; }
 
     .card-tools { display: flex; gap: 4px; flex-shrink: 0; }
@@ -622,7 +631,9 @@
       link.title = file.path;
       const pagesText = file.pages ? `<span>${pageLabel(file.pages)}</span>` : '';
       const badge = kind === 'pdf'
-        ? (file.extracted ? '<span class="badge ok">texto listo</span>' : '<span class="badge wait">pendiente</span>')
+        ? (file.extracted ? '<span class="badge ok">texto listo</span>'
+          : failedPaths.has(file.path) ? '<span class="badge err">error al extraer</span>'
+          : '<span class="badge wait">pendiente</span>')
         : '';
       link.innerHTML = `
         <span class="pdf-name">${escapeHtml(prettyName(file.name).replace(/\.(md|tex)$/i, ''))}</span>
@@ -777,6 +788,57 @@
     // Progreso de la extracción automática (se hace sola en el servidor)
     const extractStatus = document.getElementById('extractStatus');
     let wasRunning = false;
+    let errorsKey = '';
+    let failedPaths = new Set();
+
+    function explainError(message) {
+      if (/Defender|borrado/i.test(message)) return 'Windows (Defender) ha bloqueado o borrado archivos de este PDF. Suele ser un falso positivo.';
+      if (/encrypt|password|cifrad/i.test(message)) return 'El PDF está protegido con contraseña.';
+      if (/corrupt|broken|damaged|cannot open|failed to open|no such file|format/i.test(message)) return 'El PDF está dañado o a medio copiar.';
+      return String(message).replace(/'[A-Za-z]:[^']*'/g, 'el archivo');
+    }
+
+    function renderExtractErrors(errors) {
+      const key = JSON.stringify(errors);
+      extractStatus.className = 'extract-status warn failed';
+      extractStatus.hidden = false;
+      if (key === errorsKey && extractStatus.firstChild) return; // sin repintar si no cambió
+      errorsKey = key;
+      const paths = Object.keys(errors);
+      failedPaths = new Set(paths);
+      render();
+      extractStatus.innerHTML = '<b></b><ul></ul>';
+      extractStatus.firstChild.textContent = paths.length === 1
+        ? 'No se pudo extraer 1 PDF'
+        : `No se pudieron extraer ${paths.length} PDF`;
+      const list = extractStatus.querySelector('ul');
+      paths.forEach((path) => {
+        const li = document.createElement('li');
+        const parts = path.split('/');
+        const name = document.createElement('div');
+        name.className = 'fail-name';
+        name.textContent = parts.pop();
+        const where = document.createElement('div');
+        where.className = 'fail-where';
+        where.textContent = parts.join(' › ');
+        const why = document.createElement('div');
+        why.className = 'fail-why';
+        why.textContent = explainError(errors[path]);
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.textContent = 'Reintentar';
+        retry.addEventListener('click', async () => {
+          retry.disabled = true;
+          retry.textContent = 'Extrayendo…';
+          const r = await fetch('/api/extract?force=1&path=' + encodeURIComponent(path), { cache: 'no-store' })
+            .then((x) => x.json()).catch(() => ({ ok: false, error: 'Servidor no disponible' }));
+          if (r.ok) { showToast('Extracción rehecha: ' + name.textContent); errorsKey = ''; loadFiles(); }
+          else { retry.disabled = false; retry.textContent = 'Reintentar'; uiAlert(explainError(r.error || ''), 'No se pudo extraer ' + name.textContent); }
+        });
+        li.append(name, where, why, retry);
+        list.appendChild(li);
+      });
+    }
     async function watchExtraction() {
       if (document.hidden || !apiEnabled) return;
       try {
@@ -789,12 +851,10 @@
           extractStatus.title = s.current || '';
           extractStatus.hidden = false;
         } else if (errors.length) {
-          extractStatus.className = 'extract-status warn';
-          extractStatus.textContent = `${errors.length} PDF no se pudieron extraer (pasa el ratón para ver cuáles)`;
-          extractStatus.title = errors.map((k) => k + ': ' + s.errors[k]).join('\n');
-          extractStatus.hidden = false;
+          renderExtractErrors(s.errors);
         } else {
           extractStatus.hidden = true;
+          if (failedPaths.size) { failedPaths = new Set(); errorsKey = ''; render(); }
         }
         if (wasRunning && !s.running) loadFiles();
         wasRunning = s.running;

@@ -234,9 +234,16 @@ def _scan_once():
                 _failed[str(pdf)] = (st.st_size, st.st_mtime_ns)
             except OSError:
                 pass
+    # Se conservan los fallos anteriores solo mientras el PDF siga existiendo y sin extraer.
     with _status_lock:
-        _status.update(running=False, done=len(pending), current="",
-                       errors={**_status["errors"], **errors} if not pending else errors)
+        previous = dict(_status["errors"])
+    still = {}
+    for rel, msg in previous.items():
+        p = base / rel
+        if p.is_file() and not is_fresh(p):
+            still[rel] = msg
+    with _status_lock:
+        _status.update(running=False, done=len(pending), current="", errors={**still, **errors})
 
 
 def _loop():
