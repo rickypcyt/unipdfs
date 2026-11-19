@@ -7,3 +7,4 @@ _herramientas/
 config.json
 # Datos de ejemplo/personales del autor
 University/
+*.log.err

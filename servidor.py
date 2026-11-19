@@ -1,6 +1,7 @@
 import html
 import json
 import logging
+import os
 import re
 import shutil
 import webbrowser
@@ -33,7 +34,7 @@ def source_root():
         raise RuntimeError("Elige primero la carpeta de asignaturas")
     return r
 
-PORT = 8000
+PORT = int(os.environ.get("APUNTES_PORT", "8000"))
 
 
 def code_version():
